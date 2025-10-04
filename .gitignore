@@ -1,0 +1,90 @@
+# REM repository gitignore
+# Ignore SLURM script
+slurm.sh
+
+# Ignore outputs and logs
+output/
+logs/
+ckpt/
+
+# General Python ignores
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Compiled shared objects
+*.so
+*.dylib
+*.dll
+
+# Distribution / packaging
+.Python
+build/
+dist/
+develop-eggs/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+pip-wheel-metadata/
+
+# Unit test / coverage reports
+.tox/
+.nox/
+.pytest_cache/
+.coverage
+.coverage.*
+.cache/
+nosetests.xml
+coverage.xml
+htmlcov/
+.hypothesis/
+
+# Type checker caches
+.mypy_cache/
+.pytype/
+.pyre/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE/editor
+.idea/
+.vscode/
+*.code-workspace
+
+# OS files
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+Desktop.ini
+
+# Logs and temp
+*.log
+logs/**/*.log
+*.tmp
+*.swp
+*.swo
+
+# SLURM job outputs
+slurm-*.out

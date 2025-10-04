@@ -1,0 +1,8 @@
+numpy
+opencv-python
+iopath
+yacs
+timm
+huggingface-hub
+scipy
+git+https://github.com/RobustBench/robustbench.git
