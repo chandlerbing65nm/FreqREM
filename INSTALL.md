@@ -1,6 +1,6 @@
-# REM Environment Setup
+# Environment Setup
 
-This guide summarizes how to create a working ROCm-based environment for the REM repository.
+This guide summarizes how to create a working ROCm-based environment for the FreqREM repository.
 
 ## 1. Create Conda Environment
 
