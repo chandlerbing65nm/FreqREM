@@ -90,5 +90,5 @@ output/
 logs/
 ckpt/
 */plots
-*/scripts
+# */scripts
 */figs
