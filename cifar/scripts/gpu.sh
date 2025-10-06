@@ -24,12 +24,11 @@ python /users/doloriel/work/Repo/FreqREM/cifar/scripts/masking_trend_cifar10c.py
   --ckpt_dir /users/doloriel/work/Repo/FreqREM/ckpt \
   --checkpoint /users/doloriel/work/Repo/FreqREM/ckpt/vit_base_384_cifar10.t7 \
   --out_dir /users/doloriel/work/Repo/FreqREM/cifar/plots/FreqREM \
-  --num_examples 1000 \
+  --num_examples 10000 \
   --severity 5 \
   --batch_size 50 \
   --mode phase \
-  --progression 30 50 2 \
-  --phase_seed 0 \
+  --progression 25 50 5 \
   --save_phase_examples 1 \
-  --phase_example_levels 0 30 40 \
+  --phase_example_levels 0 25 30 \
   --figs_dir /users/doloriel/work/Repo/FreqREM/cifar/figs

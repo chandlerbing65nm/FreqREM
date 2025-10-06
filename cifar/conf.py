@@ -151,6 +151,11 @@ _C.OPTIM.N = 3
 _C.OPTIM.LAMB = 1.0
 _C.OPTIM.MARGIN = 0.0
 
+# Phase distortion options
+_C.PHASE = CfgNode()
+_C.PHASE.LEVELS = [0.0, 0.25, 0.30]
+_C.PHASE.SEED = None
+
 # # Config destination (in SAVE_DIR)
 # _C.CFG_DEST = "cfg.yaml"
 
