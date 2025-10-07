@@ -27,21 +27,24 @@ OPTIM:
   METHOD: Adam
   STEPS: 1
   BETA: 0.9
-  LR: 1e-4
+  LR: 1e-3
   WD: 0.0
-  # M and N are unused by phase distortion but kept for compatibility
   M: 0.1
   N: 3
-  LAMB: 2.0
+  LAMB: 1.0
   MARGIN: 0.0
 
 # Phase distortion specific options
 PHASE:
-  # Distortion levels (fractions in [0,1]) applied as [0, 0.25, 0.30] by default
-  # Edit this list to change the progression, e.g., [0.0, 0.30, 0.40]
-  LEVELS:
-    - 0.0
-    - 0.30
-    - 0.40
+  # Per-channel progressive distortion settings
+  # Distort 0 channels (clean), then 1, then 1+2, then 1+2+3 using fixed alpha.
+  # These settings mirror scripts/masking_trend_lowfreq_channels_cifar10c.py with --phase_alpha 0.45
+  ALPHA: 0.45
+  CHANNEL_ORDER: [0, 1, 2]
+  CHANNEL_STEPS: [0, 1, 2, 3]
+  # Optional seed for the random target phase field (set to null for default RNG behavior)
+  SEED: null
+  # (Backward-compat) LEVELS is ignored by REMPhase but kept to avoid loader errors
+  LEVELS: [0.0, 0.25, 0.30]
 
 block_size: 16

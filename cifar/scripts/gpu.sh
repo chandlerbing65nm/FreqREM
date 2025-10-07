@@ -19,16 +19,29 @@ conda activate rem
 # Set the working directory
 cd /users/doloriel/work/Repo/FreqREM/cifar
 
-python /users/doloriel/work/Repo/FreqREM/cifar/scripts/masking_trend_cifar10c.py \
+# python /users/doloriel/work/Repo/FreqREM/cifar/scripts/masking_trend_cifar10c.py \
+#   --data_dir /scratch/project_465002264/datasets/cifar10c \
+#   --ckpt_dir /users/doloriel/work/Repo/FreqREM/ckpt \
+#   --checkpoint /users/doloriel/work/Repo/FreqREM/ckpt/vit_base_384_cifar10.t7 \
+#   --out_dir /users/doloriel/work/Repo/FreqREM/cifar/plots/FreqREM \
+#   --num_examples 1000 \
+#   --severity 5 \
+#   --batch_size 50 \
+#   --mode phase \
+#   --progression 25 50 5 \
+#   --save_phase_examples 1 \
+#   --phase_example_levels 0 25 30 \
+#   --figs_dir /users/doloriel/work/Repo/FreqREM/cifar/figs
+
+python /users/doloriel/work/Repo/FreqREM/cifar/scripts/masking_trend_lowfreq_channels_cifar10c.py \
   --data_dir /scratch/project_465002264/datasets/cifar10c \
   --ckpt_dir /users/doloriel/work/Repo/FreqREM/ckpt \
   --checkpoint /users/doloriel/work/Repo/FreqREM/ckpt/vit_base_384_cifar10.t7 \
   --out_dir /users/doloriel/work/Repo/FreqREM/cifar/plots/FreqREM \
-  --num_examples 10000 \
+  --num_examples 1000 \
   --severity 5 \
   --batch_size 50 \
-  --mode phase \
-  --progression 25 50 5 \
-  --save_phase_examples 1 \
-  --phase_example_levels 0 25 30 \
-  --figs_dir /users/doloriel/work/Repo/FreqREM/cifar/figs
+  --channel_order 0 1 2 \
+  --phase_seed 0 \
+  --phase_alpha 0.45 \
+  --corruptions gaussian_noise defocus_blur snow jpeg_compression

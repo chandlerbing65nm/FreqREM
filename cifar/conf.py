@@ -155,6 +155,9 @@ _C.OPTIM.MARGIN = 0.0
 _C.PHASE = CfgNode()
 _C.PHASE.LEVELS = [0.0, 0.25, 0.30]
 _C.PHASE.SEED = None
+_C.PHASE.ALPHA = 0.45
+_C.PHASE.CHANNEL_ORDER = [0, 1, 2]
+_C.PHASE.CHANNEL_STEPS = [0, 1, 2, 3]
 
 # # Config destination (in SAVE_DIR)
 # _C.CFG_DEST = "cfg.yaml"

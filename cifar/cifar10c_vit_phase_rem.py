@@ -110,16 +110,31 @@ def setup_rem_phase(model):
     model = rem.configure_model(model)
     params, param_names = rem.collect_params(model)
     optimizer = setup_optimizer(params)
-    # Levels and seed from config (fallback to defaults inside REMPhase if missing)
-    levels = tuple(cfg.PHASE.LEVELS) if hasattr(cfg, 'PHASE') and hasattr(cfg.PHASE, 'LEVELS') else (0.0, 0.25, 0.30)
+    # Read PHASE settings (per-channel progressive distortion):
+    # alpha (mixing strength), channel order, channel steps; also optional seed
+    levels = tuple(cfg.PHASE.LEVELS) if hasattr(cfg, 'PHASE') and hasattr(cfg.PHASE, 'LEVELS') else (0.0, 0.25, 0.30)  # kept for backward-compat
     phase_seed = cfg.PHASE.SEED if hasattr(cfg, 'PHASE') and hasattr(cfg.PHASE, 'SEED') else None
+    alpha = cfg.PHASE.ALPHA if hasattr(cfg, 'PHASE') and hasattr(cfg.PHASE, 'ALPHA') else 0.45
+    channel_order = tuple(cfg.PHASE.CHANNEL_ORDER) if hasattr(cfg, 'PHASE') and hasattr(cfg.PHASE, 'CHANNEL_ORDER') else (0, 1, 2)
+    # Use OPTIM.N to control how many views (steps) to use: steps = [0, 1, ..., N-1], capped by num channels
+    if hasattr(cfg, 'OPTIM') and hasattr(cfg.OPTIM, 'N') and cfg.OPTIM.N is not None:
+        # N denotes number of views including the clean view at 0
+        num_views = int(cfg.OPTIM.N)
+        # steps: 0 channels, then 1, ..., up to min(N-1, num_channels)
+        max_ch = len(channel_order)
+        channel_steps = tuple(range(0, min(num_views, max_ch + 1)))
+    else:
+        channel_steps = tuple(cfg.PHASE.CHANNEL_STEPS) if hasattr(cfg, 'PHASE') and hasattr(cfg.PHASE, 'CHANNEL_STEPS') else (0, 1, 2, 3)
     rem_model = REMPhase(model, optimizer,
                          steps=cfg.OPTIM.STEPS,
                          episodic=cfg.MODEL.EPISODIC,
-                         levels=levels,
+                         levels=levels,  # ignored, for compat
                          lamb=cfg.OPTIM.LAMB,
                          margin=cfg.OPTIM.MARGIN,
-                         phase_seed=phase_seed)
+                         phase_seed=phase_seed,
+                         alpha=alpha,
+                         channel_order=channel_order,
+                         channel_steps=channel_steps)
     logger.info(f"optimizer for adaptation: {optimizer}")
     return rem_model
 

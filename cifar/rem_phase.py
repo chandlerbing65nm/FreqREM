@@ -15,8 +15,9 @@ from rem import (
 
 class REMPhase(nn.Module):
     """
-    Test-time adaptation with phase distortion variants instead of patch-token masking.
-    Uses the same consistency (MCL) and entropy ordering (ERL) losses as REM.
+    Test-time adaptation with progressive per-channel phase distortion variants
+    (0 channels, then 1, then 1+2, then 1+2+3), instead of patch-token masking.
+    Uses the same MCL and ERL losses as REM.
     """
 
     def __init__(
@@ -25,10 +26,13 @@ class REMPhase(nn.Module):
         optimizer: torch.optim.Optimizer,
         steps: int = 1,
         episodic: bool = False,
-        levels=(0.0, 0.25, 0.30),  # fraction strengths (0..1)
+        levels=(0.0, 0.25, 0.30),  # deprecated: kept for backward-compat (ignored)
         lamb: float = 1.0,
         margin: float = 0.0,
         phase_seed: int = None,
+        alpha: float = 0.45,
+        channel_order=(0, 1, 2),
+        channel_steps=(0, 1, 2, 3),
     ):
         super().__init__()
         self.model = model
@@ -40,12 +44,10 @@ class REMPhase(nn.Module):
         self.model_state, self.optimizer_state, _, _ = \
             copy_model_and_optimizer(self.model, self.optimizer)
 
-        # Strength ladder
-        self.levels = [float(l) for l in levels]
-        # ensure 0 present and increasing order
-        if 0.0 not in self.levels:
-            self.levels = [0.0] + self.levels
-        self.levels = sorted(list(dict.fromkeys(self.levels)))
+        # Per-channel progression configuration
+        self.alpha = float(alpha)
+        self.channel_order = tuple(int(c) for c in channel_order)
+        self.channel_steps = tuple(int(s) for s in channel_steps)
 
         self.lamb = lamb
         self.margin = margin
@@ -91,19 +93,25 @@ class REMPhase(nn.Module):
 
         outputs_list = [outputs]
         eps = 1e-8
-        for alpha in self.levels:
-            if alpha == 0.0:
-                continue  # already appended
+        # Generate variants by increasing the number of channels that receive phase distortion
+        for s in self.channel_steps:
+            if s == 0:
+                continue  # already have the clean output as anchor
             # Build distorted image (no grad through FFT math)
             with torch.no_grad():
-                mixed = (1.0 - alpha) * unit + alpha * unit_rand
-                mixed = mixed / (mixed.abs() + eps)
-                Xp = mag * mixed
+                new_unit = unit.clone()
+                num = min(s, len(self.channel_order), C)
+                for k in range(num):
+                    ch = self.channel_order[k]
+                    mixed = (1.0 - self.alpha) * unit[:, ch] + self.alpha * unit_rand[:, ch]
+                    new_unit[:, ch] = mixed
+                new_unit = new_unit / (new_unit.abs() + eps)
+                Xp = mag * new_unit
                 x_rec = torch.fft.ifft2(Xp, dim=(-2, -1), norm='ortho').real
                 x_rec = x_rec.clamp(0.0, 1.0)
             # Forward WITH gradients on model parameters
-            out_alpha = self.model(x_rec, return_attn=False)
-            outputs_list.append(out_alpha)
+            out_s = self.model(x_rec, return_attn=False)
+            outputs_list.append(out_s)
         self.model.train()
 
         # Consistency losses (MCL)
