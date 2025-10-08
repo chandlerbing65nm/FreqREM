@@ -158,6 +158,20 @@ _C.PHASE.SEED = None
 _C.PHASE.ALPHA = 0.45
 _C.PHASE.CHANNEL_ORDER = [0, 1, 2]
 _C.PHASE.CHANNEL_STEPS = [0, 1, 2, 3]
+_C.PHASE.USE_MCL = True
+_C.PHASE.USE_ERL = True
+_C.PHASE.CONSISTENCY_MODE = 'mcl'
+_C.PHASE.CWAL_THRESHOLD = 0.7
+
+# Phase-mix-then-mask options
+_C.PHASEMIX = CfgNode()
+_C.PHASEMIX.ALPHA = 1.0
+
+# Entropy-based REM (EntREM) options
+_C.ENTREM = CfgNode()
+_C.ENTREM.PATCH_SIZE = 16
+_C.ENTREM.NUM_BINS = 32
+_C.ENTREM.LEVELS = [0, 10, 20]
 
 # # Config destination (in SAVE_DIR)
 # _C.CFG_DEST = "cfg.yaml"
@@ -220,6 +234,17 @@ def load_cfg_fom_args(description="Config options."):
     parser.add_argument("--hog_ratio", type=float,
                     help="hog ratio")
 
+    # EntREM-specific CLI options
+    parser.add_argument("--patch_size", type=int, default=None,
+                        help="Patch size for entropy-based masking (default from cfg)")
+    parser.add_argument("--num_bins", type=int, default=None,
+                        help="Histogram bins for entropy computation (default from cfg)")
+    parser.add_argument("--entropy_levels", type=int, nargs='+', default=None,
+                        help="Masking levels in percent for entropy-based masking, e.g., 0 10 20")
+    # Phase-mix-then-mask CLI options
+    parser.add_argument("--phase_mix_alpha", type=float, default=None,
+                        help="Alpha in [0,1] for phase mix (1.0=magnitude-only counterpart)")
+
     if len(sys.argv) == 1:
         parser.print_help()
         sys.exit(1)
@@ -234,6 +259,18 @@ def load_cfg_fom_args(description="Config options."):
 
     cfg.use_hog = args.use_hog
     cfg.hog_ratio = args.hog_ratio
+
+    # Populate EntREM config from CLI if provided
+    if args.patch_size is not None:
+        cfg.ENTREM.PATCH_SIZE = args.patch_size
+    if args.num_bins is not None:
+        cfg.ENTREM.NUM_BINS = args.num_bins
+    if args.entropy_levels is not None:
+        cfg.ENTREM.LEVELS = args.entropy_levels
+
+    # Populate PHASEMIX from CLI if provided
+    if args.phase_mix_alpha is not None:
+        cfg.PHASEMIX.ALPHA = args.phase_mix_alpha
 
 
     log_dest = os.path.basename(args.cfg_file)

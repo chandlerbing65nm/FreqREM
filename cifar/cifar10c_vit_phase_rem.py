@@ -125,6 +125,9 @@ def setup_rem_phase(model):
         channel_steps = tuple(range(0, min(num_views, max_ch + 1)))
     else:
         channel_steps = tuple(cfg.PHASE.CHANNEL_STEPS) if hasattr(cfg, 'PHASE') and hasattr(cfg.PHASE, 'CHANNEL_STEPS') else (0, 1, 2, 3)
+    # Consistency controls
+    consistency_mode = (cfg.PHASE.CONSISTENCY_MODE if hasattr(cfg, 'PHASE') and hasattr(cfg.PHASE, 'CONSISTENCY_MODE') else 'mcl')
+    cwal_threshold = (cfg.PHASE.CWAL_THRESHOLD if hasattr(cfg, 'PHASE') and hasattr(cfg.PHASE, 'CWAL_THRESHOLD') else 0.7)
     rem_model = REMPhase(model, optimizer,
                          steps=cfg.OPTIM.STEPS,
                          episodic=cfg.MODEL.EPISODIC,
@@ -134,8 +137,15 @@ def setup_rem_phase(model):
                          phase_seed=phase_seed,
                          alpha=alpha,
                          channel_order=channel_order,
-                         channel_steps=channel_steps)
+                         channel_steps=channel_steps,
+                         use_mcl=(cfg.PHASE.USE_MCL if hasattr(cfg.PHASE, 'USE_MCL') else True),
+                         use_erl=(cfg.PHASE.USE_ERL if hasattr(cfg.PHASE, 'USE_ERL') else True),
+                         consistency_mode=consistency_mode,
+                         cwal_threshold=cwal_threshold)
     logger.info(f"optimizer for adaptation: {optimizer}")
+    logger.info(f"REMPhase settings -> alpha: {alpha}, channel_order: {channel_order}, channel_steps: {channel_steps}, "
+                f"use_mcl: {getattr(cfg.PHASE, 'USE_MCL', True)}, use_erl: {getattr(cfg.PHASE, 'USE_ERL', True)}, "
+                f"consistency_mode: {consistency_mode}, cwal_threshold: {cwal_threshold}")
     return rem_model
 
 

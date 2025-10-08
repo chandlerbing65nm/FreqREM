@@ -25,7 +25,7 @@ CORRUPTION:
     - jpeg_compression
 OPTIM:
   METHOD: Adam
-  STEPS: 3
+  STEPS: 1
   BETA: 0.9
   LR: 1e-3
   WD: 0.0

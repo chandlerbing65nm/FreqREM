@@ -39,12 +39,19 @@ PHASE:
   # Per-channel progressive distortion settings
   # Distort 0 channels (clean), then 1, then 1+2, then 1+2+3 using fixed alpha.
   # These settings mirror scripts/masking_trend_lowfreq_channels_cifar10c.py with --phase_alpha 0.45
-  ALPHA: 0.45
+  ALPHA: 0.35
   CHANNEL_ORDER: [0, 1, 2]
   CHANNEL_STEPS: [0, 1, 2, 3]
   # Optional seed for the random target phase field (set to null for default RNG behavior)
   SEED: null
+  # Ablation toggles for losses
+  USE_MCL: true
+  USE_ERL: true
+  # Consistency mode: 'mcl' for original consistency, 'cwal' for confidence-weighted agreement
+  CONSISTENCY_MODE: mcl
+  # Only used when CONSISTENCY_MODE=cwal; mask threshold on easy-view confidence
+  CWAL_THRESHOLD: 0.7
   # (Backward-compat) LEVELS is ignored by REMPhase but kept to avoid loader errors
-  LEVELS: [0.0, 0.25, 0.30]
+  LEVELS: [0.0, 0.3, 0.4]
 
 block_size: 16

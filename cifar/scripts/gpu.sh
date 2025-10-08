@@ -33,15 +33,18 @@ cd /users/doloriel/work/Repo/FreqREM/cifar
 #   --phase_example_levels 0 25 30 \
 #   --figs_dir /users/doloriel/work/Repo/FreqREM/cifar/figs
 
-python /users/doloriel/work/Repo/FreqREM/cifar/scripts/masking_trend_lowfreq_channels_cifar10c.py \
+# Example: Combined phase-mix then patch masking (uses same t for both)
+python /users/doloriel/work/Repo/FreqREM/cifar/scripts/phase_mix_then_mask_trend_cifar10c.py \
   --data_dir /scratch/project_465002264/datasets/cifar10c \
   --ckpt_dir /users/doloriel/work/Repo/FreqREM/ckpt \
   --checkpoint /users/doloriel/work/Repo/FreqREM/ckpt/vit_base_384_cifar10.t7 \
-  --out_dir /users/doloriel/work/Repo/FreqREM/cifar/plots/FreqREM \
-  --num_examples 1000 \
+  --out_dir /users/doloriel/work/Repo/FreqREM/cifar/plots/PhaseMixThenMask \
+  --num_examples 20 \
   --severity 5 \
-  --batch_size 50 \
-  --channel_order 0 1 2 \
-  --phase_seed 0 \
-  --phase_alpha 0.45 \
+  --batch_size 20 \
+  --progression 0 100 10 \
+  --phase_alpha 0.6 \
+  --save_mix_examples 1 \
+  --mix_example_levels 0 25 50 75 100 \
+  --figs_dir /users/doloriel/work/Repo/FreqREM/cifar/figs/PhaseMixThenMask \
   --corruptions gaussian_noise defocus_blur snow jpeg_compression

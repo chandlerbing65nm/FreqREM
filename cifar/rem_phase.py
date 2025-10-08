@@ -33,6 +33,10 @@ class REMPhase(nn.Module):
         alpha: float = 0.45,
         channel_order=(0, 1, 2),
         channel_steps=(0, 1, 2, 3),
+        use_mcl: bool = True,
+        use_erl: bool = True,
+        consistency_mode: str = "mcl",
+        cwal_threshold: float = 0.7,
     ):
         super().__init__()
         self.model = model
@@ -54,6 +58,11 @@ class REMPhase(nn.Module):
 
         self.entropy = Entropy()
         self.phase_seed = phase_seed
+        self.use_mcl = bool(use_mcl)
+        self.use_erl = bool(use_erl)
+        self.consistency_mode = str(consistency_mode).lower()
+        assert self.consistency_mode in ["mcl", "cwal"], "consistency_mode must be 'mcl' or 'cwal'"
+        self.cwal_threshold = float(cwal_threshold)
 
     def forward(self, x: torch.Tensor):
         if self.episodic:
@@ -114,22 +123,48 @@ class REMPhase(nn.Module):
             outputs_list.append(out_s)
         self.model.train()
 
-        # Consistency losses (MCL)
-        loss = 0.0
-        for i in range(1, len(outputs_list)):
-            loss += softmax_entropy(outputs_list[i], outputs_list[0].detach()).mean()
-            for j in range(1, i):
-                loss += softmax_entropy(outputs_list[i], outputs_list[j].detach()).mean()
+        # Build total loss with optional terms
+        total_loss = None
+        if self.use_mcl:
+            if self.consistency_mode == "mcl":
+                mcl = 0.0
+                for i in range(1, len(outputs_list)):
+                    mcl += softmax_entropy(outputs_list[i], outputs_list[0].detach()).mean()
+                    for j in range(1, i):
+                        mcl += softmax_entropy(outputs_list[i], outputs_list[j].detach()).mean()
+                total_loss = mcl if total_loss is None else (total_loss + mcl)
+            elif self.consistency_mode == "cwal":
+                # Class-Wise Confidence CWAL (CWC-CWAL)
+                # Use per-class confidence threshold to mask classes in the easy view.
+                eps = 1e-8
+                p_easy = outputs_list[0].softmax(dim=1)              # [B,C]
+                p_easy_detached = p_easy.detach()
+                class_mask = (p_easy > self.cwal_threshold).float()   # [B,C]
+                if class_mask.sum() > 0:
+                    cwal_total = 0.0
+                    for i in range(1, len(outputs_list)):
+                        p_hard_log = outputs_list[i].log_softmax(dim=1)  # [B,C]
+                        # KL per class: p_easy * (log p_easy - log p_hard)
+                        kl_per_class = p_easy_detached * (p_easy_detached.log() - p_hard_log)
+                        masked_kl = kl_per_class * class_mask
+                        loss_i = masked_kl.sum() / (class_mask.sum() + eps)
+                        cwal_total += loss_i
+                    total_loss = cwal_total if total_loss is None else (total_loss + cwal_total)
 
-        # Entropy ordering loss (ERL)
-        entropys = [self.entropy(out) for out in outputs_list]
-        lossn = 0.0
-        margin = self.margin * math.log(outputs.shape[-1])
-        for i in range(len(outputs_list)):
-            for j in range(i + 1, len(outputs_list)):
-                lossn += (F.relu(entropys[i] - entropys[j].detach() + margin)).mean()
+        if self.use_erl:
+            entropys = [self.entropy(out) for out in outputs_list]
+            erl = 0.0
+            margin = self.margin * math.log(outputs.shape[-1])
+            for i in range(len(outputs_list)):
+                for j in range(i + 1, len(outputs_list)):
+                    erl += (F.relu(entropys[i] - entropys[j].detach() + margin)).mean()
+            erl = self.lamb * erl
+            total_loss = erl if total_loss is None else (total_loss + erl)
 
-        total_loss = loss + self.lamb * lossn
+        # If both terms disabled, skip update
+        if total_loss is None:
+            return outputs
+
         total_loss.backward()
         optimizer.step()
         optimizer.zero_grad()
