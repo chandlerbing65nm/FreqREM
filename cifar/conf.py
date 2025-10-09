@@ -236,6 +236,18 @@ def load_cfg_fom_args(description="Config options."):
     parser.add_argument("--hog_ratio", type=float,
                     help="hog ratio")
 
+    # REM/EntREM optimization CLI options
+    parser.add_argument("--steps", type=int, default=None,
+                        help="Number of adaptation updates per batch (maps to OPTIM.STEPS)")
+    parser.add_argument("--m", type=float, default=None,
+                        help="Masking increment per level in [0,1] (maps to OPTIM.M)")
+    parser.add_argument("--n", type=int, default=None,
+                        help="Number of masking levels (maps to OPTIM.N)")
+    parser.add_argument("--lamb", type=float, default=None,
+                        help="Lambda for entropy-ordering loss (maps to OPTIM.LAMB)")
+    parser.add_argument("--margin", type=float, default=None,
+                        help="Margin multiplier in entropy-ordering loss (maps to OPTIM.MARGIN)")
+
     # EntREM-specific CLI options
     parser.add_argument("--patch_size", type=int, default=None,
                         help="Patch size for entropy-based masking (default from cfg)")
@@ -264,6 +276,18 @@ def load_cfg_fom_args(description="Config options."):
     cfg.size = args.size
     cfg.DATA_DIR = args.data_dir
     cfg.TEST.ckpt = args.checkpoint
+
+    # Populate OPTIM from CLI if provided
+    if args.steps is not None:
+        cfg.OPTIM.STEPS = args.steps
+    if args.m is not None:
+        cfg.OPTIM.M = args.m
+    if args.n is not None:
+        cfg.OPTIM.N = args.n
+    if args.lamb is not None:
+        cfg.OPTIM.LAMB = args.lamb
+    if args.margin is not None:
+        cfg.OPTIM.MARGIN = args.margin
 
     cfg.use_hog = args.use_hog
     cfg.hog_ratio = args.hog_ratio
