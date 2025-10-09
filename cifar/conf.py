@@ -172,6 +172,8 @@ _C.ENTREM = CfgNode()
 _C.ENTREM.PATCH_SIZE = 16
 _C.ENTREM.NUM_BINS = 32
 _C.ENTREM.LEVELS = [0, 10, 20]
+_C.ENTREM.USE_COLOR_ENTROPY = False
+_C.ENTREM.ENTROPY_WEIGHT_POWER = 2.0
 
 # # Config destination (in SAVE_DIR)
 # _C.CFG_DEST = "cfg.yaml"
@@ -239,8 +241,14 @@ def load_cfg_fom_args(description="Config options."):
                         help="Patch size for entropy-based masking (default from cfg)")
     parser.add_argument("--num_bins", type=int, default=None,
                         help="Histogram bins for entropy computation (default from cfg)")
+    parser.add_argument("--entropy_bins", type=int, default=None,
+                        help="Alias for --num_bins: histogram bins for entropy computation")
     parser.add_argument("--entropy_levels", type=int, nargs='+', default=None,
                         help="Masking levels in percent for entropy-based masking, e.g., 0 10 20")
+    parser.add_argument("--use_color_entropy", action="store_true",
+                        help="Compute entropy over RGB channels (averaged) instead of grayscale")
+    parser.add_argument("--entropy_weight_power", type=float, default=None,
+                        help="Power for weighting top entropies when computing centroid (>1 emphasizes higher entropies)")
     # Phase-mix-then-mask CLI options
     parser.add_argument("--phase_mix_alpha", type=float, default=None,
                         help="Alpha in [0,1] for phase mix (1.0=magnitude-only counterpart)")
@@ -265,8 +273,14 @@ def load_cfg_fom_args(description="Config options."):
         cfg.ENTREM.PATCH_SIZE = args.patch_size
     if args.num_bins is not None:
         cfg.ENTREM.NUM_BINS = args.num_bins
+    if args.entropy_bins is not None:
+        cfg.ENTREM.NUM_BINS = args.entropy_bins
     if args.entropy_levels is not None:
         cfg.ENTREM.LEVELS = args.entropy_levels
+    # Booleans / floats
+    cfg.ENTREM.USE_COLOR_ENTROPY = bool(args.use_color_entropy)
+    if args.entropy_weight_power is not None:
+        cfg.ENTREM.ENTROPY_WEIGHT_POWER = args.entropy_weight_power
 
     # Populate PHASEMIX from CLI if provided
     if args.phase_mix_alpha is not None:

@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 import os
 import sys
-import math
 import argparse
 from collections import OrderedDict
 
@@ -57,12 +56,10 @@ def evaluate_masking_trend(model: torch.nn.Module,
                            y: torch.Tensor,
                            device: torch.device,
                            batch_size: int = 50,
-                           mode: str = 'mask',
-                           phase_seed: int = 0,
                            ratios: list = None,
-                           save_phase_examples: int = 0,
-                           phase_example_levels: list = None,
-                           figs_dir: str = None,
+                           save_mask_examples: int = 0,
+                           mask_example_levels: list = None,
+                           mask_figs_dir: str = None,
                            example_tag: str = ""):
     """
     For a single corruption type tensor (x,y): compute error and mean entropy
@@ -82,10 +79,9 @@ def evaluate_masking_trend(model: torch.nn.Module,
     total = 0
     correct_per_ratio = {r: 0 for r in ratios}
     entropy_sum_per_ratio = {r: 0.0 for r in ratios}
-
-    # Defaults for example saving
-    if phase_example_levels is None:
-        phase_example_levels = [0, 5, 10]
+    # Defaults for saving examples
+    if mask_example_levels is None:
+        mask_example_levels = [0, 10, 20]
     saved_examples = 0
 
     with torch.no_grad():
@@ -94,108 +90,123 @@ def evaluate_masking_trend(model: torch.nn.Module,
             end = min(start + batch_size, N)
             xb = x[start:end].to(device, non_blocking=True)
             yb = y[start:end].to(device, non_blocking=True)
+            # Unmasked forward to get reference logits and attention
+            outputs, attn = model(xb, return_attn=True)  # logits: [B,C], attn: [B, H, 577, 577]
+            attn_score = attn.mean(dim=1)[:, 0, 1:]      # [B, 576]
 
-            if mode == 'mask':
-                # Unmasked forward to get reference logits and attention
-                outputs, attn = model(xb, return_attn=True)  # logits: [B,C], attn: [B, H, 577, 577]
-                attn_score = attn.mean(dim=1)[:, 0, 1:]      # [B, 576]
-
-                # For each masking ratio, compute kept indices and forward
-                for r in ratios:
-                    if r == 0:
-                        logits = outputs  # reuse unmasked
+            # For each masking ratio, compute kept indices and forward
+            for r in ratios:
+                if r == 0:
+                    logits = outputs  # reuse unmasked
+                else:
+                    m = r / 100.0
+                    num_keep = int(tokens * (1.0 - m))
+                    if num_keep > 0:
+                        # Select smallest attention values to keep, mirroring cifar/rem.py
+                        len_keep = torch.topk(attn_score, num_keep, largest=False).indices
                     else:
-                        m = r / 100.0
+                        # Keep zero patch tokens; rem_vit will keep only CLS token
+                        len_keep = attn_score[:, :0]
+                    logits = model(xb, len_keep=len_keep, return_attn=False)
+
+                # Accuracy & entropy
+                pred = logits.argmax(dim=1)
+                correct = (pred == yb).sum().item()
+                ent = entropy_from_logits(logits).sum().item()
+
+                correct_per_ratio[r] += correct
+                entropy_sum_per_ratio[r] += ent
+
+            # Optionally save masked example figures with attention maps for a few samples
+            if save_mask_examples > 0 and saved_examples < save_mask_examples and mask_figs_dir is not None:
+                os.makedirs(mask_figs_dir, exist_ok=True)
+                B = xb.shape[0]
+                to_take = min(save_mask_examples - saved_examples, B)
+                # Use CLI-provided example levels for visualization
+                viz_levels = mask_example_levels
+                for bi in range(to_take):
+                    # Work on a single sample
+                    x1_cpu = xb[bi].detach().cpu().clone()  # [C,H,W], in [0,1]
+                    x1b = xb[bi:bi+1]  # keep on device for forward calls
+                    # Precompute helpers for masking
+                    patches_per_side = 24  # 384 / 16
+                    patch_h = x1_cpu.shape[1] // patches_per_side
+                    patch_w = x1_cpu.shape[2] // patches_per_side
+                    attn1 = attn_score[bi:bi+1]  # [1, 576], on device
+
+                    imgs_row = []     # top row: input/masked images
+                    attn_row = []     # bottom row: attention heatmaps
+                    labels = []
+
+                    for lv in viz_levels:
+                        m = float(lv) / 100.0
                         num_keep = int(tokens * (1.0 - m))
                         if num_keep > 0:
-                            # Select smallest attention values to keep, mirroring cifar/rem.py
-                            len_keep = torch.topk(attn_score, num_keep, largest=False).indices
+                            keep_idx = torch.topk(attn1, num_keep, largest=False).indices[0]  # [num_keep] (device)
                         else:
-                            # Keep zero patch tokens; rem_vit will keep only CLS token
-                            len_keep = attn_score[:, :0]
-                        logits = model(xb, len_keep=len_keep, return_attn=False)
-                    
-                    # Accuracy & entropy
-                    pred = logits.argmax(dim=1)
-                    correct = (pred == yb).sum().item()
-                    ent = entropy_from_logits(logits).sum().item()
+                            keep_idx = attn1[0][:0]
+                        keep_set = set(keep_idx.detach().cpu().tolist())
 
-                    correct_per_ratio[r] += correct
-                    entropy_sum_per_ratio[r] += ent
-            else:
-                # Phase distortion mode: progressively randomize FFT phase (norm='ortho')
-                # Create a fixed random phase per-batch so higher strengths move further towards the same target
-                torch.manual_seed(phase_seed)
-                B, C, H, W = xb.shape
-                psi = (torch.rand((B, C, H, W), device=xb.device) * 2 * math.pi) - math.pi  # [-pi, pi]
-                unit_rand = torch.polar(torch.ones_like(psi), psi)  # e^{i psi}
+                        # Build masked image by zeroing masked patches (CPU tensor for plotting)
+                        xm = x1_cpu.clone()
+                        for p in range(tokens):
+                            if p not in keep_set:
+                                row = p // patches_per_side
+                                col = p % patches_per_side
+                                r0 = row * patch_h
+                                r1 = r0 + patch_h
+                                c0 = col * patch_w
+                                c1 = c0 + patch_w
+                                xm[:, r0:r1, c0:c1] = 0.0
+                        imgs_row.append(xm)
+                        labels.append(f"{lv}%")
 
-                for r in ratios:
-                    alpha = r / 100.0  # 0..1 strength
-                    # FFT
-                    X = torch.fft.fft2(xb, dim=(-2, -1), norm='ortho')
-                    mag = torch.abs(X)
-                    eps = 1e-8
-                    unit = X / (mag + eps)  # e^{i phi}
-                    # Mix original and random phase, then renormalize to unit magnitude
-                    mixed = (1.0 - alpha) * unit + alpha * unit_rand
-                    mixed = mixed / (mixed.abs() + eps)
-                    Xp = mag * mixed
-                    x_rec = torch.fft.ifft2(Xp, dim=(-2, -1), norm='ortho').real
-                    x_rec = x_rec.clamp(0.0, 1.0)
+                        # Build attention map for this masking level
+                        if lv == 0:
+                            # Use unmasked attention from the batch forward
+                            att_vec = attn1[0]  # [576]
+                            full_map = att_vec.detach().cpu().reshape(patches_per_side, patches_per_side)
+                        else:
+                            # Re-run model to get attention under masked configuration
+                            with torch.no_grad():
+                                logits_m, attn_m = model(x1b, len_keep=keep_idx.unsqueeze(0), return_attn=True)
+                            att_vec_kept = attn_m.mean(dim=1)[0, 0, 1:]  # [num_keep]
+                            # Scatter kept attentions back into a 576-long vector, masked tokens as 0
+                            full_vec = torch.zeros(tokens, device=att_vec_kept.device)
+                            if num_keep > 0:
+                                full_vec[keep_idx] = att_vec_kept
+                            full_map = full_vec.detach().cpu().reshape(patches_per_side, patches_per_side)
 
-                    logits = model(x_rec, return_attn=False)
+                        # Normalize attention map for visualization (min-max over kept tokens; zeros remain 0)
+                        amap = full_map
+                        if amap.max().item() > 1e-12:
+                            amap = (amap - amap.min()) / (amap.max() - amap.min() + 1e-12)
+                        attn_row.append(amap)
 
-                    pred = logits.argmax(dim=1)
-                    correct = (pred == yb).sum().item()
-                    ent = entropy_from_logits(logits).sum().item()
+                    # Plot a 2xK panel (top: images, bottom: attention heatmaps)
+                    K = len(viz_levels)
+                    fig, axes = plt.subplots(2, K, figsize=(3*K, 6))
+                    # Ensure axes is 2D array even if K==1
+                    if K == 1:
+                        axes = axes.reshape(2, 1)
 
-                    correct_per_ratio[r] += correct
-                    entropy_sum_per_ratio[r] += ent
+                    # Top row: images
+                    for j in range(K):
+                        axes[0, j].imshow(imgs_row[j].permute(1, 2, 0).numpy())
+                        axes[0, j].set_title(labels[j])
+                        axes[0, j].axis('off')
 
-                # Optionally save example figures for a few samples at fixed levels (e.g., 0,5,10%)
-                if save_phase_examples > 0 and saved_examples < save_phase_examples and figs_dir is not None:
-                    import matplotlib.pyplot as plt
-                    os.makedirs(figs_dir, exist_ok=True)
+                    # Bottom row: attention heatmaps
+                    for j in range(K):
+                        axes[1, j].imshow(attn_row[j].numpy(), cmap='magma', vmin=0.0, vmax=1.0)
+                        axes[1, j].axis('off')
 
-                    # How many from this batch to save
-                    to_take = min(save_phase_examples - saved_examples, B)
-                    for bi in range(to_take):
-                        # For each requested level, build distorted sample
-                        imgs = []
-                        labels = []
-                        x1 = xb[bi:bi+1]
-                        ur1 = unit_rand[bi:bi+1]
-                        # Precompute FFT, mag and unit phase for efficiency
-                        X = torch.fft.fft2(x1, dim=(-2, -1), norm='ortho')
-                        mag = torch.abs(X)
-                        eps = 1e-8
-                        unit = X / (mag + eps)
-                        for lv in phase_example_levels:
-                            alpha = float(lv) / 100.0
-                            mixed = (1.0 - alpha) * unit + alpha * ur1
-                            mixed = mixed / (mixed.abs() + eps)
-                            Xp = mag * mixed
-                            xr = torch.fft.ifft2(Xp, dim=(-2, -1), norm='ortho').real
-                            xr = xr.clamp(0.0, 1.0)
-                            imgs.append(xr[0].detach().cpu())
-                            labels.append(f"{lv}%")
-
-                        # Build a 1xK figure
-                        K = len(imgs)
-                        fig, axes = plt.subplots(1, K, figsize=(3*K, 3))
-                        if K == 1:
-                            axes = [axes]
-                        for ax, im, lab in zip(axes, imgs, labels):
-                            ax.imshow(im.permute(1, 2, 0).numpy())
-                            ax.set_title(lab)
-                            ax.axis('off')
-                        tag = example_tag or "examples"
-                        out_ex = os.path.join(figs_dir, f"{tag}_sample{saved_examples+1}.png")
-                        fig.tight_layout()
-                        fig.savefig(out_ex, dpi=200)
-                        plt.close(fig)
-                        saved_examples += 1
+                    tag = example_tag or "examples"
+                    out_ex = os.path.join(mask_figs_dir, f"{tag}.png")
+                    fig.tight_layout()
+                    fig.savefig(out_ex, dpi=200)
+                    plt.close(fig)
+                    saved_examples += 1
 
             total += (end - start)
 
@@ -261,18 +272,14 @@ def main():
                         help='Number of examples to evaluate per corruption (use 10000 for full)')
     parser.add_argument('--severity', type=int, default=5)
     parser.add_argument('--out_dir', type=str, default=os.path.join(CIFAR_DIR, 'plots'))
-    parser.add_argument('--mode', type=str, choices=['mask', 'phase'], default='mask',
-                        help='mask: ViT token masking (REM-like), phase: progressive FFT phase distortion')
-    parser.add_argument('--phase_seed', type=int, default=0,
-                        help='Random seed for phase distortion (deterministic across runs)')
     parser.add_argument('--progression', type=int, nargs=3, metavar=('START','STOP','STEP'), default=[0, 100, 10],
                         help='Progression of percentage strengths, e.g., 0 100 5 for 0%,5%,...,100%')
-    parser.add_argument('--save_phase_examples', type=int, default=3,
-                        help='Number of example samples to save per corruption in phase mode (0 disables)')
-    parser.add_argument('--phase_example_levels', type=int, nargs='+', default=[0, 5, 10],
-                        help='Phase distortion levels (%) to visualize, e.g., 0 5 10')
-    parser.add_argument('--figs_dir', type=str, default=os.path.join(CIFAR_DIR, 'figs'),
-                        help='Directory to save example figures')
+    parser.add_argument('--save_mask_examples', type=int, default=0,
+                        help='Number of masked example samples to save per corruption (0 disables)')
+    parser.add_argument('--mask_example_levels', type=int, nargs='+', default=[0, 10, 20],
+                        help='Masking levels (%) to visualize, e.g., 0 10 20')
+    parser.add_argument('--mask_figs_dir', type=str, default=None,
+                        help='Directory to save masked example figures (required if saving examples)')
     args = parser.parse_args()
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -302,12 +309,10 @@ def main():
         ratios, errors, entropies = evaluate_masking_trend(
             model, x_test, y_test, device,
             batch_size=args.batch_size,
-            mode=args.mode,
-            phase_seed=args.phase_seed,
             ratios=ratios_list,
-            save_phase_examples=(args.save_phase_examples if args.mode == 'phase' else 0),
-            phase_example_levels=args.phase_example_levels,
-            figs_dir=args.figs_dir,
+            save_mask_examples=args.save_mask_examples,
+            mask_example_levels=args.mask_example_levels,
+            mask_figs_dir=args.mask_figs_dir,
             example_tag=ctype,
         )
 
