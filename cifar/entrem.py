@@ -122,18 +122,195 @@ def build_centered_square_mask(H: int, W: int, side: int, cy: int, cx: int) -> t
     return mask
 
 
+def _gaussian_kernel1d(kernel_size: int, sigma: float, device: torch.device, dtype: torch.dtype) -> torch.Tensor:
+    center = (kernel_size - 1) / 2.0
+    xs = torch.arange(kernel_size, device=device, dtype=dtype) - center
+    kernel = torch.exp(-(xs * xs) / (2.0 * sigma * sigma))
+    kernel = kernel / (kernel.sum() + 1e-12)
+    return kernel
+
+
+def gaussian_blur2d(x: torch.Tensor, kernel_size: int = 11, sigma: float = None) -> torch.Tensor:
+    """
+    Simple Gaussian blur using depthwise separable 2D convolution.
+    x: [B,C,H,W]
+    kernel_size: odd integer
+    sigma: if None, use a common heuristic based on kernel_size
+    """
+    assert kernel_size % 2 == 1, "kernel_size must be odd"
+    if sigma is None:
+        # Heuristic similar to OpenCV
+        sigma = 0.3 * ((kernel_size - 1) * 0.5 - 1) + 0.8
+    B, C, H, W = x.shape
+    device = x.device
+    dtype = x.dtype
+    k1d = _gaussian_kernel1d(kernel_size, sigma, device, dtype)
+    k2d = torch.outer(k1d, k1d)
+    kernel = k2d.view(1, 1, kernel_size, kernel_size)
+    kernel = kernel.to(device=device, dtype=dtype)
+    kernel = kernel.expand(C, 1, kernel_size, kernel_size).contiguous()
+    padding = kernel_size // 2
+    # Depthwise conv
+    return F.conv2d(x, kernel, bias=None, stride=1, padding=padding, groups=C)
+
+
+def build_square_mask_from_scores(scores: torch.Tensor,
+                                  H: int,
+                                  W: int,
+                                  patch_h: int,
+                                  patch_w: int,
+                                  ratio: float,
+                                  num_squares: int = 1) -> torch.Tensor:
+    """
+    Place num_squares equal-sized squares to cover ~ratio of the image area, centered on top score peaks.
+    Prefers non-overlapping placement; if not enough positions exist without overlap, allows overlap to
+    ensure exactly num_squares squares are placed. Squares are aligned to the patch grid.
+    scores: [Ph, Pw] (normalized importance scores)
+    Returns a binary mask [H, W] with 1s in masked regions.
+    """
+    device = scores.device
+    Ph, Pw = scores.shape
+    total_area = int(round(ratio * H * W))
+    if total_area <= 0 or num_squares <= 0:
+        return torch.zeros((H, W), device=device, dtype=torch.float32)
+
+    def to_patch_aligned(side_pixels: int) -> int:
+        side_pixels = max(patch_h, side_pixels)
+        side_pixels = (side_pixels // patch_h) * patch_h
+        return max(patch_h, min(side_pixels, min(H, W)))
+
+    side = int(round(math.sqrt(total_area / float(max(num_squares, 1)))))
+    side = to_patch_aligned(side)
+
+    mask = torch.zeros((H, W), device=device, dtype=torch.float32)
+    placed = []  # list of (y0, x0, side)
+
+    vals, idxs = torch.topk(scores.flatten(), Ph * Pw, largest=True)
+
+    def overlaps(y0, x0, s, others):
+        for (yy, xx, ss) in others:
+            if not (x0 + s <= xx or xx + ss <= x0 or y0 + s <= yy or yy + ss <= y0):
+                return True
+        return False
+
+    # First pass: place up to num_squares squares without overlap
+    for i in range(idxs.numel()):
+        if len(placed) >= num_squares:
+            break
+        p = idxs[i].item()
+        pr = p // Pw
+        pc = p % Pw
+        cy = int((pr + 0.5) * patch_h)
+        cx = int((pc + 0.5) * patch_w)
+        y0 = max(0, min(H - side, cy - side // 2))
+        x0 = max(0, min(W - side, cx - side // 2))
+        if not overlaps(y0, x0, side, placed):
+            placed.append((y0, x0, side))
+
+    # Second pass: if we still need more squares, allow overlap
+    if len(placed) < num_squares:
+        for i in range(idxs.numel()):
+            if len(placed) >= num_squares:
+                break
+            p = idxs[i].item()
+            pr = p // Pw
+            pc = p % Pw
+            cy = int((pr + 0.5) * patch_h)
+            cx = int((pc + 0.5) * patch_w)
+            y0 = max(0, min(H - side, cy - side // 2))
+            x0 = max(0, min(W - side, cx - side // 2))
+            placed.append((y0, x0, side))
+
+    for (y0, x0, s) in placed:
+        mask[y0:y0 + s, x0:x0 + s] = 1.0
+
+    return mask
+
+
+def build_random_square_mask(H: int,
+                             W: int,
+                             patch_h: int,
+                             patch_w: int,
+                             ratio: float,
+                             num_squares: int = 1) -> torch.Tensor:
+    """
+    Place num_squares equal-sized squares to cover ~ratio of the image area at random grid-aligned positions.
+    Attempts to avoid overlaps first; if not enough positions, allows overlaps to reach the desired count.
+    Returns a binary mask [H, W].
+    """
+    device = 'cpu'
+    total_area = int(round(ratio * H * W))
+    if total_area <= 0 or num_squares <= 0:
+        return torch.zeros((H, W), dtype=torch.float32)
+
+    def to_patch_aligned(side_pixels: int) -> int:
+        side_pixels = max(patch_h, side_pixels)
+        side_pixels = (side_pixels // patch_h) * patch_h
+        return max(patch_h, min(side_pixels, min(H, W)))
+
+    side = int(round(math.sqrt(total_area / float(max(num_squares, 1)))))
+    side = to_patch_aligned(side)
+
+    max_y0 = H - side
+    max_x0 = W - side
+    y_positions = max(1, (max_y0 // patch_h) + 1)
+    x_positions = max(1, (max_x0 // patch_w) + 1)
+
+    mask = torch.zeros((H, W), dtype=torch.float32)
+    placed = []  # list of (y0, x0, side)
+
+    def overlaps(y0, x0, s, others):
+        for (yy, xx, ss) in others:
+            if not (x0 + s <= xx or xx + ss <= x0 or y0 + s <= yy or yy + ss <= y0):
+                return True
+        return False
+
+    # Try to place without overlap using random sampling
+    attempts = 0
+    max_attempts = 1000
+    while len(placed) < num_squares and attempts < max_attempts:
+        ry = int(torch.randint(low=0, high=y_positions, size=(1,)).item())
+        rx = int(torch.randint(low=0, high=x_positions, size=(1,)).item())
+        y0 = min(max_y0, ry * patch_h)
+        x0 = min(max_x0, rx * patch_w)
+        if not overlaps(y0, x0, side, placed):
+            placed.append((y0, x0, side))
+        attempts += 1
+
+    # If we still need more squares, allow overlaps
+    while len(placed) < num_squares:
+        ry = int(torch.randint(low=0, high=y_positions, size=(1,)).item())
+        rx = int(torch.randint(low=0, high=x_positions, size=(1,)).item())
+        y0 = min(max_y0, ry * patch_h)
+        x0 = min(max_x0, rx * patch_w)
+        placed.append((y0, x0, side))
+
+    for (y0, x0, s) in placed:
+        mask[y0:y0 + s, x0:x0 + s] = 1.0
+
+    return mask
+
 class EntREM(nn.Module):
     """
     Entropy-based REM variant: instead of masking tokens via attention, we compute a patchwise
-    entropy map on the input image, determine a weighted centroid from the top fraction of high-entropy
-    patches, and apply a single grid-aligned square mask of the corresponding area centered at this point.
+    entropy map on the input image and build binary masks on the input.
+
+    Masking modes:
+    - Entropy mode (random_masking=False): select peaks from the entropy score map and place
+      `num_squares` equal-size, grid-aligned square masks so that the union covers ~m% of the image area.
+    - Random mode (random_masking=True): place `num_squares` equal-size, grid-aligned square masks
+      at random positions so that the union covers ~m% of the image area.
+
     We then compute the REM losses across masking levels and update the model.
     """
     def __init__(self, model: nn.Module, optimizer: torch.optim.Optimizer,
                  steps: int = 1, episodic: bool = False,
                  m: float = 0.1, n: int = 3, lamb: float = 1.0, margin: float = 0.0,
                  patch_size: int = 16, num_bins: int = 32,
-                 use_color_entropy: bool = False, entropy_weight_power: float = 2.0):
+                 use_color_entropy: bool = False, entropy_weight_power: float = 2.0,
+                 random_masking: bool = False,
+                 num_squares: int = 1,
+                 mask_type: str = 'binary'):
         super().__init__()
         self.model = model
         self.optimizer = optimizer
@@ -156,6 +333,14 @@ class EntREM(nn.Module):
         self.num_bins = num_bins
         self.use_color_entropy = use_color_entropy
         self.entropy_weight_power = entropy_weight_power
+        # If True, place the square mask at a random grid-aligned location instead of entropy centroid
+        self.random_masking = random_masking
+        # Number of equal-size squares per masking level
+        self.num_squares = max(1, int(num_squares))
+        # Mask fill type: 'binary' (zeros), 'mean' (per-image mean), 'gaussian' (blurred)
+        mt = str(mask_type).lower()
+        assert mt in ['binary', 'mean', 'gaussian'], "mask_type must be one of ['binary','mean','gaussian']"
+        self.mask_type = mt
 
     def reset(self):
         if self.model_state is None or self.optimizer_state is None:
@@ -178,18 +363,19 @@ class EntREM(nn.Module):
             raise ValueError(f"Input size {(H, W)} must be divisible by patch_size {self.patch_size}")
         patches_per_side = H // self.patch_size
 
-        # Precompute entropy map for each image (grayscale or color averaged)
-        xin = x
-        if not self.use_color_entropy:
-            xin = rgb_to_grayscale(x).clamp(0.0, 1.0)
-        else:
-            xin = x.clamp(0.0, 1.0)
-        ent_map = compute_patch_entropy_map(xin, patches_per_side=patches_per_side, num_bins=self.num_bins)  # [B,Ph,Pw]
-
-        # Normalize to [0,1] per image
-        ent_min = ent_map.amin(dim=(1, 2), keepdim=True)
-        ent_max = ent_map.amax(dim=(1, 2), keepdim=True)
-        ent_norm = (ent_map - ent_min) / (ent_max - ent_min + 1e-8)
+        # Precompute entropy map only if using entropy-based masking
+        ent_norm = None
+        if not self.random_masking:
+            xin = x
+            if not self.use_color_entropy:
+                xin = rgb_to_grayscale(x).clamp(0.0, 1.0)
+            else:
+                xin = x.clamp(0.0, 1.0)
+            ent_map = compute_patch_entropy_map(xin, patches_per_side=patches_per_side, num_bins=self.num_bins)  # [B,Ph,Pw]
+            # Normalize to [0,1] per image
+            ent_min = ent_map.amin(dim=(1, 2), keepdim=True)
+            ent_max = ent_map.amax(dim=(1, 2), keepdim=True)
+            ent_norm = (ent_map - ent_min) / (ent_max - ent_min + 1e-8)
 
         outputs_list = []
         self.model.eval()
@@ -200,28 +386,33 @@ class EntREM(nn.Module):
             else:
                 mfrac = m  # already fraction in [0,1]
                 xb_masked = x.clone()
-                Ph, Pw = ent_norm.shape[1], ent_norm.shape[2]
-                Np = Ph * Pw
-                k = max(1, int(round(mfrac * Np)))
+                Ph = patches_per_side
+                Pw = patches_per_side
                 patch_h = H // Ph
                 patch_w = W // Pw
+                # Precompute blurred fill if requested
+                x_blur = None
+                if self.mask_type == 'gaussian':
+                    x_blur = gaussian_blur2d(xb_masked, kernel_size=11, sigma=None)
                 for bi in range(B):
-                    scores_b = ent_norm[bi].flatten()  # [Np]
-                    vals, idxs = torch.topk(scores_b, k, largest=True)
-                    rows = (idxs // Pw).float()
-                    cols = (idxs % Pw).float()
-                    eps_w = 1e-8
-                    w = (vals.float() + eps_w) ** float(self.entropy_weight_power)
-                    r_bar = (rows * w).sum() / w.sum()
-                    c_bar = (cols * w).sum() / w.sum()
-                    cy = int(torch.round((r_bar + 0.5) * patch_h).item())
-                    cx = int(torch.round((c_bar + 0.5) * patch_w).item())
-                    total_area = int(round(mfrac * H * W))
-                    side = int(round(math.sqrt(max(total_area, 1))))
-                    side = max(patch_h, (side // patch_h) * patch_h)
-                    side = min(side, min(H, W))
-                    mask_bw = build_centered_square_mask(H, W, side, cy, cx).to(xb_masked.device)
-                    xb_masked[bi] = xb_masked[bi] * (1.0 - mask_bw.unsqueeze(0))
+                    if self.random_masking:
+                        mask_bw = build_random_square_mask(
+                            H, W, patch_h, patch_w, ratio=mfrac, num_squares=self.num_squares
+                        ).to(xb_masked.device)
+                    else:
+                        # Entropy-based placement using score peaks
+                        mask_bw = build_square_mask_from_scores(
+                            ent_norm[bi], H, W, patch_h, patch_w, ratio=mfrac, num_squares=self.num_squares
+                        ).to(xb_masked.device)
+                    mask_c = mask_bw.unsqueeze(0)  # [1,H,W]
+                    if self.mask_type == 'binary':
+                        xb_masked[bi] = xb_masked[bi] * (1.0 - mask_c)
+                    elif self.mask_type == 'mean':
+                        mean_val = xb_masked[bi].mean(dim=(1, 2), keepdim=True)  # [C,1,1]
+                        xb_masked[bi] = xb_masked[bi] * (1.0 - mask_c) + mean_val * mask_c
+                    elif self.mask_type == 'gaussian':
+                        # Composite with blurred image
+                        xb_masked[bi] = xb_masked[bi] * (1.0 - mask_c) + x_blur[bi] * mask_c
                 out = self.model(xb_masked, return_attn=False)
                 outputs_list.append(out)
         self.model.train()

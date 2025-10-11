@@ -41,3 +41,6 @@ ENTREM:
   LEVELS: [0, 10, 20] # not used at the moment, it's a redundancy of M and N above
   USE_COLOR_ENTROPY: True
   ENTROPY_WEIGHT_POWER: 2.0
+  RANDOM_MASKING: True
+  NUM_SQUARES: 1
+  MASK_TYPE: binary

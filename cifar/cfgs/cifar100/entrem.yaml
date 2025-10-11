@@ -34,4 +34,13 @@ OPTIM:
   LAMB: 1.0
   MARGIN: 0.0
 
-block_size: 16
+# EntREM defaults (can be overridden by CLI args)
+ENTREM:
+  PATCH_SIZE: 8
+  NUM_BINS: 32
+  LEVELS: [0, 10, 20]
+  USE_COLOR_ENTROPY: True
+  ENTROPY_WEIGHT_POWER: 2.0
+  RANDOM_MASKING: False
+  NUM_SQUARES: 1
+  MASK_TYPE: binary

@@ -4,7 +4,7 @@ import sys
 import math
 import argparse
 from collections import OrderedDict
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 
 import torch
 import torch.nn.functional as F
@@ -23,6 +23,11 @@ from robustbench.model_zoo.enums import ThreatModel
 from robustbench.utils import load_model
 
 
+# CIFAR-10 class names for labeling saved figures
+CIFAR10_CLASSES = [
+    'airplane', 'automobile', 'bird', 'cat', 'deer',
+    'dog', 'frog', 'horse', 'ship', 'truck'
+]
 def rm_substr_from_state_dict(state_dict, substr):
     new_state_dict = OrderedDict()
     for key in state_dict.keys():
@@ -207,12 +212,18 @@ def evaluate_entropy_masking_trend(model: torch.nn.Module,
                                    patches_per_side: int = 24,
                                    num_bins: int = 16,
                                    use_color_entropy: bool = False,
-                                   entropy_weight_power: float = 2.0) -> Tuple[List[int], List[float], List[float]]:
+                                   entropy_weight_power: float = 2.0,
+                                   target_class_idx: Optional[int] = None,
+                                   masking_mode: str = 'entropy',
+                                   rng: Optional[torch.Generator] = None) -> Tuple[List[int], List[float], List[float]]:
     """
-    Compute error and mean entropy for masks generated from grayscale patch Shannon entropy.
-    At each ratio r in ratios (%), select the top r% highest-entropy patches, compute their
-    weighted centroid, and place a single equal-sized square mask centered at that location.
-    The square area is approximately r% of the image area and aligned to the patch grid.
+    Compute error and mean entropy for masking strategies over a progression of ratios.
+    Masking strategies:
+    - 'entropy': Select the top r% highest-entropy patches, compute a weighted centroid, and place
+      a single equal-sized square mask centered at that location. The square area is approximately
+      r% of the image area and aligned to the patch grid.
+    - 'random': Place a single equal-sized square mask of ~r% area at a uniformly random location
+      (aligned to the patch grid). If `rng` is provided, it will be used for reproducibility.
     Returns: (ratios, errors, entropies)
     """
     model.eval()
@@ -258,31 +269,53 @@ def evaluate_entropy_masking_trend(model: torch.nn.Module,
                     # No masking at 0%
                     logits = model(xb_masked, return_attn=False)
                 else:
-                    # Use top m% highest-entropy patches to compute a centroid and center a single square mask there
-                    Ph, Pw = ent_norm.shape[1], ent_norm.shape[2]
-                    Np = Ph * Pw
-                    k = max(1, int(round(m * Np)))
-                    for bi in range(B):
-                        scores_b = ent_norm[bi].flatten()  # [Np]
-                        vals, idxs = torch.topk(scores_b, k, largest=True)
-                        rows = (idxs // Pw).float()
-                        cols = (idxs % Pw).float()
-                        eps_w = 1e-8
-                        w = (vals.float() + eps_w) ** float(entropy_weight_power)
-                        r_bar = (rows * w).sum() / w.sum()
-                        c_bar = (cols * w).sum() / w.sum()
-                        # Convert patch coords to pixel center
-                        cy = int(torch.round((r_bar + 0.5) * patch_h).item())
-                        cx = int(torch.round((c_bar + 0.5) * patch_w).item())
-                        # Determine equal-sized square side from target area, align to patch grid
+                    if masking_mode == 'entropy':
+                        # Use top m% highest-entropy patches to compute a centroid and center a single square mask there
+                        Ph, Pw = ent_norm.shape[1], ent_norm.shape[2]
+                        Np = Ph * Pw
+                        k = max(1, int(round(m * Np)))
+                        for bi in range(B):
+                            scores_b = ent_norm[bi].flatten()  # [Np]
+                            vals, idxs = torch.topk(scores_b, k, largest=True)
+                            rows = (idxs // Pw).float()
+                            cols = (idxs % Pw).float()
+                            eps_w = 1e-8
+                            w = (vals.float() + eps_w) ** float(entropy_weight_power)
+                            r_bar = (rows * w).sum() / w.sum()
+                            c_bar = (cols * w).sum() / w.sum()
+                            # Convert patch coords to pixel center
+                            cy = int(torch.round((r_bar + 0.5) * patch_h).item())
+                            cx = int(torch.round((c_bar + 0.5) * patch_w).item())
+                            # Determine equal-sized square side from target area, align to patch grid
+                            total_area = int(round(m * H * W))
+                            side = int(round(math.sqrt(max(total_area, 1))))
+                            side = max(patch_h, (side // patch_h) * patch_h)
+                            side = min(side, min(H, W))
+                            # Build and apply mask
+                            mask_bw = build_centered_square_mask(H, W, side, cy, cx).to(xb_masked.device)
+                            xb_masked[bi] = xb_masked[bi] * (1.0 - mask_bw.unsqueeze(0))
+                        logits = model(xb_masked, return_attn=False)
+                    elif masking_mode == 'random':
+                        # Randomly place a single square of ~r% area aligned to the patch grid
                         total_area = int(round(m * H * W))
                         side = int(round(math.sqrt(max(total_area, 1))))
                         side = max(patch_h, (side // patch_h) * patch_h)
                         side = min(side, min(H, W))
-                        # Build and apply mask
-                        mask_bw = build_centered_square_mask(H, W, side, cy, cx).to(xb_masked.device)
-                        xb_masked[bi] = xb_masked[bi] * (1.0 - mask_bw.unsqueeze(0))
-                    logits = model(xb_masked, return_attn=False)
+                        high_y = max(H - side + 1, 1)
+                        high_x = max(W - side + 1, 1)
+                        for bi in range(B):
+                            if rng is not None:
+                                y0 = int(torch.randint(low=0, high=high_y, size=(1,), generator=rng).item())
+                                x0 = int(torch.randint(low=0, high=high_x, size=(1,), generator=rng).item())
+                            else:
+                                y0 = int(torch.randint(low=0, high=high_y, size=(1,)).item())
+                                x0 = int(torch.randint(low=0, high=high_x, size=(1,)).item())
+                            mask_bw = torch.zeros((H, W), dtype=torch.float32, device=xb_masked.device)
+                            mask_bw[y0:y0 + side, x0:x0 + side] = 1.0
+                            xb_masked[bi] = xb_masked[bi] * (1.0 - mask_bw.unsqueeze(0))
+                        logits = model(xb_masked, return_attn=False)
+                    else:
+                        raise ValueError(f"Unknown masking_mode '{masking_mode}'. Use 'entropy' or 'random'.")
                 pred = logits.argmax(dim=1)
                 correct = (pred == yb).sum().item()
                 ent = entropy_from_logits(logits).sum().item()
@@ -293,34 +326,61 @@ def evaluate_entropy_masking_trend(model: torch.nn.Module,
             # Save example figures
             if save_mask_examples > 0 and saved_examples < save_mask_examples and mask_figs_dir is not None:
                 os.makedirs(mask_figs_dir, exist_ok=True)
-                to_take = min(save_mask_examples - saved_examples, B)
-                for bi in range(to_take):
+                # Iterate through the batch and save figures only for the target class if specified
+                for bi in range(B):
+                    if saved_examples >= save_mask_examples:
+                        break
+                    if target_class_idx is not None and int(yb[bi].detach().cpu().item()) != target_class_idx:
+                        continue
                     imgs = []
                     labels = []
                     attn_maps = []
+                    # Determine global index and class name for filename
+                    global_idx = start + bi
+                    class_idx = int(yb[bi].detach().cpu().item())
+                    class_name = CIFAR10_CLASSES[class_idx] if 0 <= class_idx < len(CIFAR10_CLASSES) else f"class{class_idx}"
+
                     for lv in mask_example_levels:
                         m = float(lv) / 100.0
                         if m == 0.0:
                             mask_bw = torch.zeros((H, W), dtype=torch.float32)
                         else:
-                            Ph, Pw = ent_norm.shape[1], ent_norm.shape[2]
-                            Np = Ph * Pw
-                            k = max(1, int(round(m * Np)))
-                            scores_b = ent_norm[bi].flatten()
-                            vals, idxs = torch.topk(scores_b, k, largest=True)
-                            rows = (idxs // Pw).float()
-                            cols = (idxs % Pw).float()
-                            eps_w = 1e-8
-                            w = (vals.float() + eps_w) ** float(entropy_weight_power)
-                            r_bar = (rows * w).sum() / w.sum()
-                            c_bar = (cols * w).sum() / w.sum()
-                            cy = int(torch.round((r_bar + 0.5) * patch_h).item())
-                            cx = int(torch.round((c_bar + 0.5) * patch_w).item())
-                            total_area = int(round(m * H * W))
-                            side = int(round(math.sqrt(max(total_area, 1))))
-                            side = max(patch_h, (side // patch_h) * patch_h)
-                            side = min(side, min(H, W))
-                            mask_bw = build_centered_square_mask(H, W, side, cy, cx)
+                            if masking_mode == 'entropy':
+                                Ph, Pw = ent_norm.shape[1], ent_norm.shape[2]
+                                Np = Ph * Pw
+                                k = max(1, int(round(m * Np)))
+                                scores_b = ent_norm[bi].flatten()
+                                vals, idxs = torch.topk(scores_b, k, largest=True)
+                                rows = (idxs // Pw).float()
+                                cols = (idxs % Pw).float()
+                                eps_w = 1e-8
+                                w = (vals.float() + eps_w) ** float(entropy_weight_power)
+                                r_bar = (rows * w).sum() / w.sum()
+                                c_bar = (cols * w).sum() / w.sum()
+                                cy = int(torch.round((r_bar + 0.5) * patch_h).item())
+                                cx = int(torch.round((c_bar + 0.5) * patch_w).item())
+                                total_area = int(round(m * H * W))
+                                side = int(round(math.sqrt(max(total_area, 1))))
+                                side = max(patch_h, (side // patch_h) * patch_h)
+                                side = min(side, min(H, W))
+                                mask_bw = build_centered_square_mask(H, W, side, cy, cx)
+                            elif masking_mode == 'random':
+                                total_area = int(round(m * H * W))
+                                side = int(round(math.sqrt(max(total_area, 1))))
+                                side = max(patch_h, (side // patch_h) * patch_h)
+                                side = min(side, min(H, W))
+                                high_y = max(H - side + 1, 1)
+                                high_x = max(W - side + 1, 1)
+                                if rng is not None:
+                                    y0 = int(torch.randint(low=0, high=high_y, size=(1,), generator=rng).item())
+                                    x0 = int(torch.randint(low=0, high=high_x, size=(1,), generator=rng).item())
+                                else:
+                                    y0 = int(torch.randint(low=0, high=high_y, size=(1,)).item())
+                                    x0 = int(torch.randint(low=0, high=high_x, size=(1,)).item())
+                                mask_bw = torch.zeros((H, W), dtype=torch.float32)
+                                mask_bw[y0:y0 + side, x0:x0 + side] = 1.0
+                            else:
+                                raise ValueError(f"Unknown masking_mode '{masking_mode}'. Use 'entropy' or 'random'.")
                         # Build masked image (CPU copy for visualization)
                         xm = xb[bi].detach().cpu() * (1.0 - mask_bw.detach().cpu().unsqueeze(0))
                         imgs.append(xm)
@@ -345,11 +405,14 @@ def evaluate_entropy_masking_trend(model: torch.nn.Module,
                         attn_maps.append(attn_norm.detach().cpu())
 
                     K = len(imgs)
-                    fig, axes = plt.subplots(2, K, figsize=(3*K, 6))
+                    # Enlarge example grid figure to better fit larger fonts
+                    fig, axes = plt.subplots(2, K, figsize=(4*K, 8))
                     # Row 0: masked RGB
                     for j in range(K):
                         axes[0, j].imshow(imgs[j].permute(1, 2, 0).numpy())
-                        axes[0, j].set_title(labels[j])
+                        # Enlarge title font size by 2.5x
+                        base_fs = plt.rcParams.get('font.size', 10.0)
+                        axes[0, j].set_title(labels[j], fontsize=base_fs * 2.5, fontweight='bold')
                         axes[0, j].axis('off')
                     # Row 1: attention heatmap
                     for j in range(K):
@@ -357,9 +420,9 @@ def evaluate_entropy_masking_trend(model: torch.nn.Module,
                         # axes[1, j].set_title('attn')
                         axes[1, j].axis('off')
                     tag = example_tag or "examples"
-                    out_ex = os.path.join(mask_figs_dir, f"{tag}.png")
+                    out_ex = os.path.join(mask_figs_dir, f"{tag}_idx{global_idx:05d}_{class_name}.png")
                     fig.tight_layout()
-                    fig.savefig(out_ex, dpi=200)
+                    fig.savefig(out_ex, dpi=200, bbox_inches='tight')
                     plt.close(fig)
                     saved_examples += 1
 
@@ -373,14 +436,19 @@ def evaluate_entropy_masking_trend(model: torch.nn.Module,
 def plot_trend(ratios, errors, entropies, title: str, out_path: str):
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
 
-    fig, ax1 = plt.subplots(figsize=(7, 4))
+    # Enlarge trend plot to accommodate larger fonts
+    fig, ax1 = plt.subplots(figsize=(12, 7))
+    # Scale fonts by 2.5x relative to current default
+    base_fs = plt.rcParams.get('font.size', 10.0)
+    fs = base_fs * 2
 
     # Left axis: error (%) to mimic paper
     errors_pct = [e * 100.0 for e in errors]
-    ax1.plot(ratios, errors_pct, marker='o', color='tab:red', label='Error')
-    ax1.set_xlabel('Masking (%)')
-    ax1.set_ylabel('Error (%)', color='tab:red')
-    ax1.tick_params(axis='y', labelcolor='tab:red')
+    line_err, = ax1.plot(ratios, errors_pct, marker='o', color='tab:red', label='Error', linewidth=4)
+    ax1.set_xlabel('Masking (%)', fontsize=fs, fontweight='bold')
+    ax1.set_ylabel('Error (%)', color='tab:red', fontsize=fs, fontweight='bold')
+    ax1.tick_params(axis='y', labelcolor='tab:red', labelsize=fs * 0.9)
+    ax1.tick_params(axis='x', labelsize=fs * 0.9)
     ax1.set_xticks(ratios)
     ax1.set_ylim(0.0, 100.0)
 
@@ -392,9 +460,9 @@ def plot_trend(ratios, errors, entropies, title: str, out_path: str):
     scale = e0 / h0 if h0 > 1e-12 else 1.0
     ent_scaled = [h * scale for h in entropies]
 
-    ax2.plot(ratios, ent_scaled, marker='s', color='tab:blue', label='Entropy')
-    ax2.set_ylabel('Entropy', color='tab:blue')
-    ax2.tick_params(axis='y', labelcolor='tab:blue')
+    line_ent, = ax2.plot(ratios, ent_scaled, marker='s', color='tab:blue', label='Entropy', linewidth=4)
+    ax2.set_ylabel('Entropy', color='tab:blue', fontsize=fs, fontweight='bold')
+    ax2.tick_params(axis='y', labelcolor='tab:blue', labelsize=fs * 0.9)
 
     def inv_format(y, pos):
         return f"{(y / max(scale, 1e-12)):.3f}"
@@ -406,9 +474,21 @@ def plot_trend(ratios, errors, entropies, title: str, out_path: str):
         pad = 0.05 * (ymax - ymin + 1e-6)
         ax2.set_ylim(ymin - pad, ymax + pad)
 
-    plt.title(title)
+    plt.title(title, fontsize=fs * 1.1, fontweight='bold')
+    # Combined legend for both axes
+    lines = [line_err, line_ent]
+    labels = [l.get_label() for l in lines]
+    leg = ax1.legend(lines, labels, loc='best', fontsize=fs)
+    # Bold legend text
+    for txt in leg.get_texts():
+        txt.set_fontweight('bold')
+    # Bold tick labels on both axes
+    for tick in ax1.get_xticklabels() + ax1.get_yticklabels():
+        tick.set_fontweight('bold')
+    for tick in ax2.get_xticklabels() + ax2.get_yticklabels():
+        tick.set_fontweight('bold')
     fig.tight_layout()
-    plt.savefig(out_path, dpi=200)
+    plt.savefig(out_path, dpi=200, bbox_inches='tight')
     plt.close(fig)
 
 
@@ -433,6 +513,8 @@ def main():
                         help='Masking levels (%) to visualize, e.g., 0 10 20')
     parser.add_argument('--mask_figs_dir', type=str, default=None,
                         help='Directory to save masked example figures (required if saving examples)')
+    parser.add_argument('--example_class', type=str, default=None,
+                        help='If set, only save example figures for this class (name e.g., "cat" or index 0-9)')
     parser.add_argument('--patch_size', type=int, default=16,
                         help='Patch size in pixels for entropy estimation grid; must divide 384 (e.g., 16 => 24x24 grid)')
     parser.add_argument('--entropy_bins', type=int, default=16,
@@ -441,11 +523,37 @@ def main():
                         help='Compute entropy on RGB channels (averaged) instead of grayscale')
     parser.add_argument('--entropy_weight_power', type=float, default=2.0,
                         help='Power applied to top-entropy weights when computing centroid; >1 emphasizes higher entropies')
+    parser.add_argument('--masking_mode', type=str, default='entropy', choices=['entropy', 'random'],
+                        help="Masking strategy to use: 'entropy' (default) or 'random' for random square placement")
+    parser.add_argument('--random_seed', type=int, default=None,
+                        help='Optional random seed for reproducible random masking')
     args = parser.parse_args()
+
+    # Determine target class index if user specified one
+    target_class_idx = None
+    if args.example_class is not None:
+        sel = str(args.example_class).strip()
+        idx = None
+        if sel.isdigit():
+            idx = int(sel)
+        else:
+            sel_norm = sel.lower().replace(' ', '').replace('_', '')
+            names_norm = [n.lower().replace(' ', '').replace('_', '') for n in CIFAR10_CLASSES]
+            if sel_norm in names_norm:
+                idx = names_norm.index(sel_norm)
+        if idx is None or not (0 <= idx < len(CIFAR10_CLASSES)):
+            raise ValueError(f"Invalid example_class '{args.example_class}'. Use 0-9 or one of {CIFAR10_CLASSES}.")
+        target_class_idx = idx
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     model = build_source_model(args.ckpt_dir, args.checkpoint, device)
+
+    # Optional RNG for reproducible random masking
+    rng = None
+    if args.random_seed is not None:
+        rng = torch.Generator(device='cpu')
+        rng.manual_seed(int(args.random_seed))
 
     corruption_types = ['gaussian_noise', 'defocus_blur', 'snow', 'jpeg_compression']
     title_map = {
@@ -485,6 +593,9 @@ def main():
             num_bins=args.entropy_bins,
             use_color_entropy=args.use_color_entropy,
             entropy_weight_power=args.entropy_weight_power,
+            target_class_idx=target_class_idx,
+            masking_mode=args.masking_mode,
+            rng=rng,
         )
 
         title = title_map.get(ctype, ctype)

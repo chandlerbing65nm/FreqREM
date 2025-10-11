@@ -3,10 +3,9 @@ from collections import OrderedDict
 
 import torch
 import torch.optim as optim
-import torch.nn as nn
 import torch.nn.functional as F
 
-from robustbench.data import load_cifar10c
+from robustbench.data import load_cifar100c
 from robustbench.model_zoo.enums import ThreatModel
 from robustbench.utils import load_model
 from robustbench.utils import clean_accuracy as accuracy
@@ -33,21 +32,19 @@ def evaluate(description):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     # configure model
     base_model = load_model(cfg.MODEL.ARCH, cfg.CKPT_DIR,
-                       cfg.CORRUPTION.DATASET, ThreatModel.corruptions)
-    checkpoint = torch.load("/users/doloriel/work/Repo/FreqREM/ckpt/vit_base_384_cifar10.t7", map_location='cpu')
-    checkpoint = rm_substr_from_state_dict(checkpoint['model'], 'module.') if isinstance(checkpoint, dict) else checkpoint
-    if isinstance(checkpoint, dict) and 'model' in checkpoint:
-        base_model.load_state_dict(checkpoint['model'], strict=True)
-    else:
-        base_model.load_state_dict(checkpoint, strict=True)
+                            cfg.CORRUPTION.DATASET, ThreatModel.corruptions)
+    # CIFAR-100 checkpoint
+    checkpoint = torch.load("/users/doloriel/work/Repo/FreqREM/ckpt/pretrain_cifar100.t7", map_location='cpu')
+    checkpoint = rm_substr_from_state_dict(checkpoint['model'], 'module.')
+    base_model.load_state_dict(checkpoint, strict=True)
     del checkpoint
-    # Apply potential adaptation checkpoint (optional)
+
     if cfg.TEST.ckpt is not None:
         if device.type == 'cuda':
             base_model = torch.nn.DataParallel(base_model)
         ckpt = torch.load(cfg.TEST.ckpt, map_location='cpu')
-        state = ckpt['model'] if isinstance(ckpt, dict) and 'model' in ckpt else ckpt
-        base_model.load_state_dict(state, strict=False)
+        state2 = ckpt['model'] if isinstance(ckpt, dict) and 'model' in ckpt else ckpt
+        base_model.load_state_dict(state2, strict=False)
     else:
         if device.type == 'cuda':
             base_model = torch.nn.DataParallel(base_model)
@@ -76,9 +73,9 @@ def evaluate(description):
                     logger.warning("not resetting model")
             else:
                 logger.warning("not resetting model")
-            x_test, y_test = load_cifar10c(cfg.CORRUPTION.NUM_EX,
-                                           severity, cfg.DATA_DIR, False,
-                                           [corruption_type])
+            x_test, y_test = load_cifar100c(cfg.CORRUPTION.NUM_EX,
+                                            severity, cfg.DATA_DIR, False,
+                                            [corruption_type])
             x_test = F.interpolate(x_test, size=(args.size, args.size),
                                    mode='bilinear', align_corners=False)
             # Ensure divisibility for EntREM patch size
@@ -93,36 +90,31 @@ def evaluate(description):
 
 
 def setup_source(model):
-    """Set up the baseline source model without adaptation."""
     model.eval()
     logger.info(f"model for evaluation: %s", model)
     return model
 
 
 def setup_optimizer(params):
-    """Set up optimizer for test-time adaptation.
-
-    For best results, try tuning the learning rate and batch size.
-    """
     if cfg.OPTIM.METHOD == 'Adam':
         return optim.Adam(params,
-                    lr=cfg.OPTIM.LR,
-                    betas=(cfg.OPTIM.BETA, 0.999),
-                    weight_decay=cfg.OPTIM.WD)
+                          lr=cfg.OPTIM.LR,
+                          betas=(cfg.OPTIM.BETA, 0.999),
+                          weight_decay=cfg.OPTIM.WD)
     elif cfg.OPTIM.METHOD == 'SGD':
         return optim.SGD(params,
-                   lr=cfg.OPTIM.LR,
-                   momentum=cfg.OPTIM.MOMENTUM,
-                   dampening=cfg.OPTIM.DAMPENING,
-                   weight_decay=cfg.OPTIM.WD,
-                   nesterov=cfg.OPTIM.NESTEROV)
+                         lr=cfg.OPTIM.LR,
+                         momentum=cfg.OPTIM.MOMENTUM,
+                         dampening=cfg.OPTIM.DAMPENING,
+                         weight_decay=cfg.OPTIM.WD,
+                         nesterov=cfg.OPTIM.NESTEROV)
     else:
         raise NotImplementedError
 
 
 def setup_entrem(model):
     model = entrem.configure_model(model)
-    params, param_names = entrem.collect_params(model)
+    params, _ = entrem.collect_params(model)
     optimizer = setup_optimizer(params)
     rem_model = entrem.EntREM(
         model, optimizer,
@@ -145,4 +137,4 @@ def setup_entrem(model):
 
 
 if __name__ == '__main__':
-    evaluate('CIFAR-10-C evaluation with EntREM (entropy-masked REM).')
+    evaluate('CIFAR-100-C evaluation with EntREM (entropy-masked REM).')

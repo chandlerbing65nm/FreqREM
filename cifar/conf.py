@@ -174,6 +174,9 @@ _C.ENTREM.NUM_BINS = 32
 _C.ENTREM.LEVELS = [0, 10, 20]
 _C.ENTREM.USE_COLOR_ENTROPY = False
 _C.ENTREM.ENTROPY_WEIGHT_POWER = 2.0
+_C.ENTREM.RANDOM_MASKING = False
+_C.ENTREM.NUM_SQUARES = 1
+_C.ENTREM.MASK_TYPE = 'binary'  # choices: 'binary', 'gaussian', 'mean'
 
 # # Config destination (in SAVE_DIR)
 # _C.CFG_DEST = "cfg.yaml"
@@ -261,6 +264,12 @@ def load_cfg_fom_args(description="Config options."):
                         help="Compute entropy over RGB channels (averaged) instead of grayscale")
     parser.add_argument("--entropy_weight_power", type=float, default=None,
                         help="Power for weighting top entropies when computing centroid (>1 emphasizes higher entropies)")
+    parser.add_argument("--random_masking", action="store_true",
+                        help="Use random grid-aligned square placement instead of entropy centroid")
+    parser.add_argument("--num_squares", type=int, default=None,
+                        help="Number of equal-size squares to place per masking level (default from cfg)")
+    parser.add_argument("--mask_type", type=str, default=None, choices=['binary', 'gaussian', 'mean'],
+                        help="How to fill masked regions: 'binary' (zero), 'gaussian' (blurred), or 'mean' (per-image mean)")
     # Phase-mix-then-mask CLI options
     parser.add_argument("--phase_mix_alpha", type=float, default=None,
                         help="Alpha in [0,1] for phase mix (1.0=magnitude-only counterpart)")
@@ -305,6 +314,11 @@ def load_cfg_fom_args(description="Config options."):
     cfg.ENTREM.USE_COLOR_ENTROPY = bool(args.use_color_entropy)
     if args.entropy_weight_power is not None:
         cfg.ENTREM.ENTROPY_WEIGHT_POWER = args.entropy_weight_power
+    cfg.ENTREM.RANDOM_MASKING = bool(args.random_masking)
+    if args.num_squares is not None:
+        cfg.ENTREM.NUM_SQUARES = max(1, int(args.num_squares))
+    if args.mask_type is not None:
+        cfg.ENTREM.MASK_TYPE = str(args.mask_type).lower()
 
     # Populate PHASEMIX from CLI if provided
     if args.phase_mix_alpha is not None:

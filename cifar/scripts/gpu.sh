@@ -41,10 +41,13 @@ python /users/doloriel/work/Repo/FreqREM/cifar/scripts/entropy_masking_trend_cif
   --severity 5 \
   --batch_size 20 \
   --progression 0 100 10 \
-  --save_mask_examples 1 \
+  --save_mask_examples 3 \
   --mask_example_levels 0 10 20 \
   --mask_figs_dir /users/doloriel/work/Repo/FreqREM/cifar/figs/FreqREM \
   --patch_size 8 \
   --entropy_bins 32 \
   --use_color_entropy \
-  --entropy_weight_power 2
+  --entropy_weight_power 2 \
+  --masking_mode random \
+  --random_seed 42 \
+  --example_class airplane
