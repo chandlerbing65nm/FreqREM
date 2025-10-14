@@ -419,6 +419,7 @@ class EntREM(nn.Module):
 
         # Compute REM losses across masking levels
         loss = 0.0
+        # Mask Consistency Loss (MCL)
         for i in range(1, len(self.mn)):
             loss = loss + softmax_entropy(outputs_list[i], outputs_list[0].detach()).mean()
             for j in range(1, i):
@@ -427,6 +428,7 @@ class EntREM(nn.Module):
         entropys = [self.entropy(o) for o in outputs_list]
         margin = self.margin * math.log(outputs_list[0].shape[-1])
         lossn = 0.0
+        # Entropy Ranking Loss (ERL)
         for i in range(len(self.mn)):
             for j in range(i + 1, len(self.mn)):
                 lossn = lossn + (F.relu(entropys[i] - entropys[j].detach() + margin)).mean()

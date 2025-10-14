@@ -1,0 +1,55 @@
+MODEL:
+  ADAPTATION: REM          # any value other than 'source' enables adaptation in threeview scripts
+  ARCH: Standard_VITB_REM  # ViT-B backbone used in existing scripts
+TEST:
+  BATCH_SIZE: 20
+CORRUPTION:
+  DATASET: cifar10
+  SEVERITY:
+    - 5
+  TYPE:
+    - gaussian_noise
+    - shot_noise
+    - impulse_noise
+    - defocus_blur 
+    - glass_blur
+    - motion_blur
+    - zoom_blur
+    - snow
+    - frost
+    - fog
+    - brightness
+    - contrast
+    - elastic_transform
+    - pixelate
+    - jpeg_compression
+OPTIM:
+  METHOD: Adam
+  STEPS: 1
+  BETA: 0.9
+  LR: 1e-3
+  WD: 0.0
+  M: 0.3        # ThreeViewREM: fraction of patches to mask (k = round(M * P^2)) for v1 (random) and v2 (high-entropy)
+  N: 3          # Not used by ThreeViewREM (kept for consistency)
+  LAMB: 1.0
+  MARGIN: 0.0
+
+# ThreeViewREM settings reuse ENTREM grid/entropy options
+ENTREM:
+  PATCH_SIZE: 16           # On 384x384, P = 48; ensure --size is divisible by PATCH_SIZE
+  NUM_BINS: 32            # Histogram bins for patch entropy
+  LEVELS: [0, 10, 20]     # Not used here
+  USE_COLOR_ENTROPY: True # If True, compute RGB entropies (avg); else grayscale
+
+# Loss toggles (can be overridden via --disable_mcl / --disable_erl)
+LOSS:
+  USE_MCL: True
+  USE_ERL: True
+  MCL_DISTANCE: CE   # choices: CE, KL, RKL, JS, COSINE, L1, L2, HELLINGER
+
+# EMA loss plotting (single PNG across corruptions when not resetting)
+PLOT:
+  LOSSES_ENABLE: True
+  LOSSES_EMA: 0.9
+  LOSSES_DIR: /users/doloriel/work/Repo/FreqREM/cifar/plots/ThreeViewREM/Loss
+  LOSSES_FILENAME: threeview_losses_m{m}_ps{patch_size}_{mcl_distance}.png
