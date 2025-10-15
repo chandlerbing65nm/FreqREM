@@ -177,19 +177,11 @@ _C.ENTREM.ENTROPY_WEIGHT_POWER = 2.0
 _C.ENTREM.RANDOM_MASKING = False
 _C.ENTREM.NUM_SQUARES = 1
 _C.ENTREM.MASK_TYPE = 'binary'  # choices: 'binary', 'gaussian', 'mean'
-
-# Loss toggles (for adaptation losses)
-_C.LOSS = CfgNode()
-_C.LOSS.USE_MCL = True
-_C.LOSS.USE_ERL = True
-_C.LOSS.MCL_DISTANCE = 'CE'  # choices: 'CE','KL','RKL','JS','COSINE','L1','L2','HELLINGER'
-
-# Plotting options for losses (EMA over time)
-_C.PLOT = CfgNode()
-_C.PLOT.LOSSES_ENABLE = False
-_C.PLOT.LOSSES_EMA = 0.9
-_C.PLOT.LOSSES_DIR = "cifar/plots/FreqREM/Loss"
-_C.PLOT.LOSSES_FILENAME = "losses.png"
+_C.ENTREM.PLOT_LOSS = False
+_C.ENTREM.PLOT_LOSS_PATH = ""
+_C.ENTREM.PLOT_EMA_ALPHA = 0.98
+_C.ENTREM.MCL_TEMPERATURE = 1.0
+_C.ENTREM.MCL_TEMPERATURE_APPLY = 'both'  # choices: 'teacher', 'student', 'both'
 
 # # Config destination (in SAVE_DIR)
 # _C.CFG_DEST = "cfg.yaml"
@@ -283,29 +275,21 @@ def load_cfg_fom_args(description="Config options."):
                         help="Number of equal-size squares to place per masking level (default from cfg)")
     parser.add_argument("--mask_type", type=str, default=None, choices=['binary', 'gaussian', 'mean'],
                         help="How to fill masked regions: 'binary' (zero), 'gaussian' (blurred), or 'mean' (per-image mean)")
+    # EntREM plotting CLI options
+    parser.add_argument("--plot_loss", action="store_true",
+                        help="If set, save a PNG plot of EMA of MCL and ERL across steps")
+    parser.add_argument("--plot_loss_path", type=str, default=None,
+                        help="Output path for the loss plot PNG")
+    parser.add_argument("--plot_ema_alpha", type=float, default=None,
+                        help="EMA alpha for smoothing MCL/ERL curves (e.g., 0.98)")
+    # MCL temperature
+    parser.add_argument("--mcl_temperature", type=float, default=None,
+                        help="Temperature for MCL softmax/log_softmax (default from cfg)")
+    parser.add_argument("--mcl_temperature_apply", type=str, default=None, choices=['teacher','student','both'],
+                        help="Where to apply MCL temperature when <1: teacher, student, or both")
     # Phase-mix-then-mask CLI options
     parser.add_argument("--phase_mix_alpha", type=float, default=None,
                         help="Alpha in [0,1] for phase mix (1.0=magnitude-only counterpart)")
-
-    # Loss toggles
-    parser.add_argument("--disable_mcl", action="store_true",
-                        help="Disable the MCL (mask consistency) loss component")
-    parser.add_argument("--disable_erl", action="store_true",
-                        help="Disable the ERL (entropy ranking) loss component")
-
-    parser.add_argument("--mcl_distance", type=str, default=None,
-                        choices=['CE', 'KL', 'RKL', 'REVERSE_KL', 'JS', 'COS', 'COSINE', 'L1', 'L2', 'HELLINGER'],
-                        help="Distance for MCL: CE, KL, RKL (reverse KL), JS, Cosine, L1, L2, Hellinger")
-
-    # Loss plotting (EMA) across evaluation (when model isn't reset)
-    parser.add_argument("--plot_losses", action="store_true",
-                        help="Enable saving a single PNG of enabled losses with EMA over time")
-    parser.add_argument("--plot_losses_ema", type=float, default=None,
-                        help="EMA factor in (0,1) for loss plotting (default from cfg)")
-    parser.add_argument("--plot_losses_dir", type=str, default=None,
-                        help="Directory where the loss plot PNG will be saved")
-    parser.add_argument("--plot_losses_filename", type=str, default=None,
-                        help="Filename for the saved loss plot PNG (e.g., losses.png)")
 
     if len(sys.argv) == 1:
         parser.print_help()
@@ -343,40 +327,27 @@ def load_cfg_fom_args(description="Config options."):
         cfg.ENTREM.NUM_BINS = args.entropy_bins
     if args.entropy_levels is not None:
         cfg.ENTREM.LEVELS = args.entropy_levels
-    # Booleans / floats (only override if flag is present)
-    if "--use_color_entropy" in sys.argv:
-        cfg.ENTREM.USE_COLOR_ENTROPY = True
+    # Booleans / floats
+    cfg.ENTREM.USE_COLOR_ENTROPY = bool(args.use_color_entropy)
     if args.entropy_weight_power is not None:
         cfg.ENTREM.ENTROPY_WEIGHT_POWER = args.entropy_weight_power
-    if "--random_masking" in sys.argv:
-        cfg.ENTREM.RANDOM_MASKING = True
+    cfg.ENTREM.RANDOM_MASKING = bool(args.random_masking)
     if args.num_squares is not None:
         cfg.ENTREM.NUM_SQUARES = max(1, int(args.num_squares))
     if args.mask_type is not None:
         cfg.ENTREM.MASK_TYPE = str(args.mask_type).lower()
-
-    # Apply loss toggle args
-    if "--disable_mcl" in sys.argv:
-        cfg.LOSS.USE_MCL = False
-    if "--disable_erl" in sys.argv:
-        cfg.LOSS.USE_ERL = False
-    if args.mcl_distance is not None:
-        md = str(args.mcl_distance).upper()
-        if md == 'COS':
-            md = 'COSINE'
-        if md == 'REVERSE_KL':
-            md = 'RKL'
-        cfg.LOSS.MCL_DISTANCE = md
-
-    # Apply plotting args
-    if "--plot_losses" in sys.argv:
-        cfg.PLOT.LOSSES_ENABLE = True
-    if args.plot_losses_ema is not None:
-        cfg.PLOT.LOSSES_EMA = float(args.plot_losses_ema)
-    if args.plot_losses_dir is not None:
-        cfg.PLOT.LOSSES_DIR = str(args.plot_losses_dir)
-    if args.plot_losses_filename is not None:
-        cfg.PLOT.LOSSES_FILENAME = str(args.plot_losses_filename)
+    # Plotting options
+    if args.plot_loss:
+        cfg.ENTREM.PLOT_LOSS = True
+    if args.plot_loss_path is not None:
+        cfg.ENTREM.PLOT_LOSS_PATH = args.plot_loss_path
+    if args.plot_ema_alpha is not None:
+        cfg.ENTREM.PLOT_EMA_ALPHA = args.plot_ema_alpha
+    # MCL temperature
+    if args.mcl_temperature is not None:
+        cfg.ENTREM.MCL_TEMPERATURE = args.mcl_temperature
+    if args.mcl_temperature_apply is not None:
+        cfg.ENTREM.MCL_TEMPERATURE_APPLY = args.mcl_temperature_apply.lower()
 
     # Populate PHASEMIX from CLI if provided
     if args.phase_mix_alpha is not None:

@@ -4,6 +4,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import math
+import os
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
 
 
 class Entropy(nn.Module):
@@ -18,6 +22,36 @@ class Entropy(nn.Module):
 def softmax_entropy(x: torch.Tensor, x_ema: torch.Tensor) -> torch.Tensor:
     """Cross-entropy between current logits and a detached target distribution."""
     return -(x_ema.softmax(1) * x.log_softmax(1)).sum(1)
+
+
+@torch.jit.script
+def softmax_entropy_temp(x: torch.Tensor, x_ema: torch.Tensor, temperature: float) -> torch.Tensor:
+    """Cross-entropy with temperature scaling: softmax(logits/temperature).
+
+    Args:
+        x: current logits [B, K]
+        x_ema: target logits [B, K] (detached)
+        temperature: > 0 scalar
+    """
+    t = torch.tensor(temperature, dtype=x.dtype, device=x.device)
+    t = torch.clamp(t, min=1e-6)
+    return -((x_ema / t).softmax(1) * (x / t).log_softmax(1)).sum(1)
+
+
+@torch.jit.script
+def softmax_entropy_temp_teacher(x: torch.Tensor, x_ema: torch.Tensor, temperature: float) -> torch.Tensor:
+    """Temperature scaling applied to teacher (target) only."""
+    t = torch.tensor(temperature, dtype=x.dtype, device=x.device)
+    t = torch.clamp(t, min=1e-6)
+    return -((x_ema / t).softmax(1) * x.log_softmax(1)).sum(1)
+
+
+@torch.jit.script
+def softmax_entropy_temp_student(x: torch.Tensor, x_ema: torch.Tensor, temperature: float) -> torch.Tensor:
+    """Temperature scaling applied to student (current) only."""
+    t = torch.tensor(temperature, dtype=x.dtype, device=x.device)
+    t = torch.clamp(t, min=1e-6)
+    return -(x_ema.softmax(1) * (x / t).log_softmax(1)).sum(1)
 
 
 def copy_model_and_optimizer(model: nn.Module, optimizer: torch.optim.Optimizer):
@@ -310,7 +344,14 @@ class EntREM(nn.Module):
                  use_color_entropy: bool = False, entropy_weight_power: float = 2.0,
                  random_masking: bool = False,
                  num_squares: int = 1,
-                 mask_type: str = 'binary'):
+                 mask_type: str = 'binary',
+                 # Plotting options
+                 plot_loss: bool = False,
+                 plot_loss_path: str = "",
+                 plot_ema_alpha: float = 0.98,
+                 # MCL temperature
+                 mcl_temperature: float = 1.0,
+                 mcl_temperature_apply: str = 'both'):
         super().__init__()
         self.model = model
         self.optimizer = optimizer
@@ -341,6 +382,68 @@ class EntREM(nn.Module):
         mt = str(mask_type).lower()
         assert mt in ['binary', 'mean', 'gaussian'], "mask_type must be one of ['binary','mean','gaussian']"
         self.mask_type = mt
+
+        # Plotting state
+        self.plot_loss = bool(plot_loss)
+        self.plot_loss_path = str(plot_loss_path) if plot_loss_path is not None else ""
+        self.plot_ema_alpha = float(plot_ema_alpha)
+        self._ema_mcl = None
+        self._ema_erl = None
+        self._steps_seen = 0
+        self._ema_mcl_hist = []
+        self._ema_erl_hist = []
+
+        # MCL temperature
+        self.mcl_temperature = float(mcl_temperature)
+        if self.mcl_temperature <= 0:
+            raise ValueError("mcl_temperature must be > 0")
+        mta = str(mcl_temperature_apply).lower()
+        if mta not in ['teacher', 'student', 'both']:
+            raise ValueError("mcl_temperature_apply must be one of ['teacher','student','both']")
+        self.mcl_temperature_apply = mta
+
+    def _update_and_plot_losses(self, mcl_val: torch.Tensor, erl_val: torch.Tensor):
+        if not self.plot_loss:
+            return
+        # Detach to CPU scalars
+        mcl = float(mcl_val.detach().item())
+        erl = float(erl_val.detach().item())
+        alpha = self.plot_ema_alpha
+        # Initialize or update EMA
+        if self._ema_mcl is None:
+            self._ema_mcl = mcl
+            self._ema_erl = erl
+        else:
+            self._ema_mcl = alpha * self._ema_mcl + (1.0 - alpha) * mcl
+            self._ema_erl = alpha * self._ema_erl + (1.0 - alpha) * erl
+        self._steps_seen += 1
+        self._ema_mcl_hist.append(self._ema_mcl)
+        self._ema_erl_hist.append(self._ema_erl)
+
+        # Guard against empty path
+        if not self.plot_loss_path:
+            return
+        # Ensure directory exists
+        out_dir = os.path.dirname(self.plot_loss_path)
+        if out_dir:
+            os.makedirs(out_dir, exist_ok=True)
+
+        # Plot
+        try:
+            plt.figure(figsize=(8, 5))
+            xs = list(range(1, self._steps_seen + 1))
+            plt.plot(xs, self._ema_mcl_hist, label='EMA MCL', color='tab:blue')
+            plt.plot(xs, self._ema_erl_hist, label='EMA ERL', color='tab:orange')
+            plt.xlabel('Batch steps')
+            plt.ylabel('Loss (EMA)')
+            plt.title('EMA of MCL and ERL over steps')
+            plt.legend()
+            plt.tight_layout()
+            plt.savefig(self.plot_loss_path)
+            plt.close()
+        except Exception:
+            # Silently ignore plotting errors to avoid disrupting adaptation
+            pass
 
     def reset(self):
         if self.model_state is None or self.optimizer_state is None:
@@ -418,25 +521,48 @@ class EntREM(nn.Module):
         self.model.train()
 
         # Compute REM losses across masking levels
-        loss = 0.0
         # Mask Consistency Loss (MCL)
+        mcl_loss = 0.0
         for i in range(1, len(self.mn)):
-            loss = loss + softmax_entropy(outputs_list[i], outputs_list[0].detach()).mean()
-            for j in range(1, i):
-                loss = loss + softmax_entropy(outputs_list[i], outputs_list[j].detach()).mean()
+            if self.mcl_temperature < 1.0:
+                if self.mcl_temperature_apply == 'teacher':
+                    mcl_loss = mcl_loss + softmax_entropy_temp_teacher(outputs_list[i], outputs_list[0].detach(), self.mcl_temperature).mean()
+                elif self.mcl_temperature_apply == 'student':
+                    mcl_loss = mcl_loss + softmax_entropy_temp_student(outputs_list[i], outputs_list[0].detach(), self.mcl_temperature).mean()
+                else:  # both
+                    mcl_loss = mcl_loss + softmax_entropy_temp(outputs_list[i], outputs_list[0].detach(), self.mcl_temperature).mean()
+                for j in range(1, i):
+                    if self.mcl_temperature_apply == 'teacher':
+                        mcl_loss = mcl_loss + softmax_entropy_temp_teacher(outputs_list[i], outputs_list[j].detach(), self.mcl_temperature).mean()
+                    elif self.mcl_temperature_apply == 'student':
+                        mcl_loss = mcl_loss + softmax_entropy_temp_student(outputs_list[i], outputs_list[j].detach(), self.mcl_temperature).mean()
+                    else:
+                        mcl_loss = mcl_loss + softmax_entropy_temp(outputs_list[i], outputs_list[j].detach(), self.mcl_temperature).mean()
+            else:
+                # Temperature >= 1: use standard (equivalent to no temp or softened equally)
+                mcl_loss = mcl_loss + softmax_entropy(outputs_list[i], outputs_list[0].detach()).mean()
+                for j in range(1, i):
+                    mcl_loss = mcl_loss + softmax_entropy(outputs_list[i], outputs_list[j].detach()).mean()
 
         entropys = [self.entropy(o) for o in outputs_list]
         margin = self.margin * math.log(outputs_list[0].shape[-1])
-        lossn = 0.0
+        erl_loss = 0.0
         # Entropy Ranking Loss (ERL)
         for i in range(len(self.mn)):
             for j in range(i + 1, len(self.mn)):
-                lossn = lossn + (F.relu(entropys[i] - entropys[j].detach() + margin)).mean()
+                erl_loss = erl_loss + (F.relu(entropys[i] - entropys[j].detach() + margin)).mean()
 
-        loss = loss + self.lamb * lossn
+        # Total loss
+        loss = mcl_loss + self.lamb * erl_loss
         loss.backward()
         optimizer.step()
         optimizer.zero_grad()
+
+        # Update EMA trackers and save plot if enabled
+        self._update_and_plot_losses(
+            mcl_val=mcl_loss if isinstance(mcl_loss, torch.Tensor) else torch.tensor(mcl_loss),
+            erl_val=erl_loss if isinstance(erl_loss, torch.Tensor) else torch.tensor(erl_loss)
+        )
 
         # Return unmasked prediction
         return outputs_list[0]

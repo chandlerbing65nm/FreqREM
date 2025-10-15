@@ -44,3 +44,8 @@ ENTREM:
   RANDOM_MASKING: True
   NUM_SQUARES: 1
   MASK_TYPE: binary
+  PLOT_LOSS: True
+  PLOT_LOSS_PATH: /users/doloriel/work/Repo/FreqREM/cifar/plots/EntREM/Loss/losses.png
+  PLOT_EMA_ALPHA: 0.98
+  MCL_TEMPERATURE: 1.0
+  MCL_TEMPERATURE_APPLY: both

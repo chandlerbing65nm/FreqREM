@@ -131,6 +131,11 @@ def setup_entrem(model):
         random_masking=cfg.ENTREM.RANDOM_MASKING,
         num_squares=cfg.ENTREM.NUM_SQUARES,
         mask_type=cfg.ENTREM.MASK_TYPE,
+        plot_loss=cfg.ENTREM.PLOT_LOSS,
+        plot_loss_path=cfg.ENTREM.PLOT_LOSS_PATH,
+        plot_ema_alpha=cfg.ENTREM.PLOT_EMA_ALPHA,
+        mcl_temperature=cfg.ENTREM.MCL_TEMPERATURE,
+        mcl_temperature_apply=cfg.ENTREM.MCL_TEMPERATURE_APPLY,
     )
     logger.info(f"optimizer for adaptation: %s", optimizer)
     return rem_model
