@@ -81,23 +81,87 @@ def configure_model(model: nn.Module) -> nn.Module:
     return model
 
 
-def collect_params(model: nn.Module):
-    """Collect trainable parameters similar to REM's policy (skip late ViT blocks and norms)."""
+def collect_params(model: nn.Module, ln_quarter: str = 'default'):
+    """Collect trainable parameters (LayerNorm weights/bias) with optional quarter selection.
+
+    Quarter selection applies to ViT-style transformer blocks named like 'blocks.X'.
+    Options:
+      - 'default': original policy (skip LayerNorms in blocks 9,10,11 and any top-level 'norm')
+      - 'q1'|'q2'|'q3'|'q4': only LayerNorms inside the corresponding quarter of transformer blocks
+      - 'all': LayerNorms inside all transformer blocks
+
+    For CNN backbones, the original exclusions (skip 'layer4', skip top-level 'norm') still apply.
+    """
+    ln_quarter = str(ln_quarter).lower()
     params = []
     names = []
+
+    # First pass: gather transformer block indices if present
+    block_indices = set()
+    for nm, _ in model.named_modules():
+        if 'blocks.' in nm:
+            try:
+                after = nm.split('blocks.')[1]
+                idx_str = after.split('.')[0]
+                if idx_str.isdigit():
+                    block_indices.add(int(idx_str))
+            except Exception:
+                pass
+
+    sorted_blocks = sorted(block_indices)
+    n_blocks = len(sorted_blocks)
+
+    def quarter_index_ranges(n: int):
+        # Returns list of (start_inclusive, end_inclusive) for 4 quarters dividing [0, n)
+        # Use rounding to distribute remainder evenly.
+        bounds = [int(round(i * n / 4.0)) for i in range(5)]  # 0, ~n/4, ~n/2, ~3n/4, n
+        return [(bounds[i], bounds[i + 1] - 1) for i in range(4)]
+
+    allowed_blocks = None  # None means use default policy
+    if ln_quarter in ['q1', 'q2', 'q3', 'q4', 'all'] and n_blocks > 0:
+        if ln_quarter == 'all':
+            allowed_blocks = set(sorted_blocks)
+        else:
+            q_map = {'q1': 0, 'q2': 1, 'q3': 2, 'q4': 3}
+            q_idx = q_map[ln_quarter]
+            ranges = quarter_index_ranges(n_blocks)
+            # Map back to actual block indices using their sorted order
+            start_pos, end_pos = ranges[q_idx]
+            start_pos = max(0, min(start_pos, n_blocks - 1))
+            end_pos = max(start_pos, min(end_pos, n_blocks - 1))
+            allowed_blocks = set(sorted_blocks[start_pos:end_pos + 1])
+
+    # Second pass: collect LayerNorm parameters according to policy
     for nm, m in model.named_modules():
+        # Exclusions common to both policies
         if 'layer4' in nm:
-            continue
-        if 'blocks.9' in nm:
-            continue
-        if 'blocks.10' in nm:
-            continue
-        if 'blocks.11' in nm:
             continue
         if 'norm.' in nm:
             continue
         if nm in ['norm']:
             continue
+
+        # Determine if this module is inside a specific transformer block
+        this_block_idx = None
+        if 'blocks.' in nm:
+            try:
+                after = nm.split('blocks.')[1]
+                idx_str = after.split('.')[0]
+                if idx_str.isdigit():
+                    this_block_idx = int(idx_str)
+            except Exception:
+                pass
+
+        # Apply selection policy
+        if allowed_blocks is None:
+            # default policy: skip LNs in blocks 9,10,11 (ViT-B typical last quarter)
+            if any(f'blocks.{k}' in nm for k in ['9', '10', '11']):
+                continue
+        else:
+            # quarter/all policy: only allow LNs in allowed transformer blocks
+            if this_block_idx is None or this_block_idx not in allowed_blocks:
+                continue
+
         if isinstance(m, nn.LayerNorm):
             for np, p in m.named_parameters():
                 if np in ['weight', 'bias'] and p.requires_grad:
@@ -345,13 +409,40 @@ class EntREM(nn.Module):
                  random_masking: bool = False,
                  num_squares: int = 1,
                  mask_type: str = 'binary',
+                 prune_random_range = None,
                  # Plotting options
                  plot_loss: bool = False,
                  plot_loss_path: str = "",
                  plot_ema_alpha: float = 0.98,
                  # MCL temperature
                  mcl_temperature: float = 1.0,
-                 mcl_temperature_apply: str = 'both'):
+                 mcl_temperature_apply: str = 'both',
+                 # ERL activation selection
+                 erl_activation: str = 'relu',
+                 erl_leaky_relu_slope: float = 0.01,
+                 erl_softplus_beta: float = 1.0,
+                 # Progressive masking curriculum
+                 m_step: float = 0.0,
+                 m_top: float = 0.5,
+                 m_progress_enable: bool = False,
+                 m_progress_dir: str = 'up',
+                 # Adaptive masking schedule (entropy-gap driven)
+                 m_adaptive_enable: bool = False,
+                 m_gap_target: float = 0.2,
+                 m_gap_kp: float = 0.05,
+                 m_min: float = 0.0,
+                 m_max: float = 0.8,
+                 m_adapt_smooth: float = 0.9,
+                 # Pruning via mask-induced entropy differential
+                 prune_enable: bool = False,
+                 prune_tau_low: float = 0.02,
+                 prune_tau_high: float = 0.5,
+                 prune_mean_low: float = 0.01,
+                 prune_mean_high: float = 1.0,
+                 prune_skip_prediction: bool = False,
+                 # Disable specific losses
+                 disable_mcl: bool = False,
+                 disable_erl: bool = False):
         super().__init__()
         self.model = model
         self.optimizer = optimizer
@@ -361,9 +452,26 @@ class EntREM(nn.Module):
 
         self.model_state, self.optimizer_state = copy_model_and_optimizer(self.model, self.optimizer)
 
-        self.m = m
-        self.n = n
+        self.m = float(m)
+        self.n = int(n)
         self.mn = [i * self.m for i in range(self.n)]
+        # Progressive state
+        self.m_progress_enable = bool(m_progress_enable)
+        self.m_step = float(m_step)
+        self.m_top = float(m_top)
+        mpd = str(m_progress_dir).lower()
+        assert mpd in ['up', 'down'], "m_progress_dir must be 'up' or 'down'"
+        self.m_progress_dir = mpd
+        # Current m that will be updated if progression is enabled
+        self.m_current = max(0.0, min(1.0, self.m))
+        # Adaptive state
+        self.m_adaptive_enable = bool(m_adaptive_enable)
+        self.m_gap_target = float(m_gap_target)
+        self.m_gap_kp = float(m_gap_kp)
+        self.m_min = float(m_min)
+        self.m_max = float(m_max)
+        self.m_adapt_smooth = float(m_adapt_smooth)
+        self._gap_ema = None
         self.lamb = lamb
         self.margin = margin
 
@@ -401,6 +509,71 @@ class EntREM(nn.Module):
         if mta not in ['teacher', 'student', 'both']:
             raise ValueError("mcl_temperature_apply must be one of ['teacher','student','both']")
         self.mcl_temperature_apply = mta
+
+        # ERL activation configuration
+        act = str(erl_activation).lower()
+        if act not in ['relu', 'leaky_relu', 'softplus', 'gelu', 'sigmoid', 'identity']:
+            raise ValueError("erl_activation must be one of ['relu','leaky_relu','softplus','gelu','sigmoid','identity']")
+        self.erl_activation = act
+        self.erl_leaky_relu_slope = float(erl_leaky_relu_slope)
+        self.erl_softplus_beta = float(erl_softplus_beta)
+
+        # Disable flags
+        self.disable_mcl = bool(disable_mcl)
+        self.disable_erl = bool(disable_erl)
+
+        # Pruning configuration
+        self.prune_enable = bool(prune_enable)
+        self.prune_tau_low = float(prune_tau_low)
+        self.prune_tau_high = float(prune_tau_high)
+        self.prune_mean_low = float(prune_mean_low)
+        self.prune_mean_high = float(prune_mean_high)
+        self.prune_skip_prediction = bool(prune_skip_prediction)
+        # Optional dataset-level random prune range (A,B), stored for reference/logging; pruning is applied in eval scripts
+        self.prune_random_range = prune_random_range
+
+    def _current_levels(self):
+        """Compute masking levels for this batch.
+        If progression enabled, use m_current; else use static m.
+        Levels are [0, m, 2m, ..., (n-1)m] clamped to [0,1].
+        """
+        m_use = self.m_current if self.m_progress_enable else self.m
+        levels = [max(0.0, min(1.0, i * m_use)) for i in range(self.n)]
+        # Ensure first level is exactly 0.0
+        if len(levels) > 0:
+            levels[0] = 0.0
+        return levels
+
+    def _step_progress(self):
+        """Update m_current toward m_top by m_step in the chosen direction, with clamping.
+        up: m <- min(m_top, m + m_step)
+        down: m <- max(m_top, m - m_step)
+        """
+        if not self.m_progress_enable or self.m_step == 0.0:
+            return
+        if self.m_progress_dir == 'up':
+            self.m_current = min(self.m_top, self.m_current + abs(self.m_step))
+        else:  # down
+            self.m_current = max(self.m_top, self.m_current - abs(self.m_step))
+        # Clamp to valid bounds
+        self.m_current = max(self.m_min, min(self.m_max, self.m_current))
+
+    def _step_adaptive(self, gap_value: float):
+        """Adapt m_current using proportional control on the entropy-gap signal.
+        gap_value: observed gap across consecutive masked views (scalar float)
+        m <- clamp(m + kp * (target - gap_ema), [m_min, m_max])
+        """
+        if not self.m_adaptive_enable:
+            return
+        g = float(gap_value)
+        if self._gap_ema is None:
+            self._gap_ema = g
+        else:
+            a = self.m_adapt_smooth
+            self._gap_ema = a * self._gap_ema + (1.0 - a) * g
+        delta = self.m_gap_kp * (self.m_gap_target - self._gap_ema)
+        self.m_current = self.m_current + delta
+        self.m_current = max(self.m_min, min(self.m_max, self.m_current))
 
     def _update_and_plot_losses(self, mcl_val: torch.Tensor, erl_val: torch.Tensor):
         if not self.plot_loss:
@@ -445,6 +618,23 @@ class EntREM(nn.Module):
             # Silently ignore plotting errors to avoid disrupting adaptation
             pass
 
+    def _apply_erl_activation(self, x: torch.Tensor) -> torch.Tensor:
+        if self.erl_activation == 'relu':
+            return F.relu(x)
+        elif self.erl_activation == 'leaky_relu':
+            return F.leaky_relu(x, negative_slope=self.erl_leaky_relu_slope)
+        elif self.erl_activation == 'softplus':
+            return F.softplus(x, beta=self.erl_softplus_beta)
+        elif self.erl_activation == 'gelu':
+            return F.gelu(x)
+        elif self.erl_activation == 'sigmoid':
+            return torch.sigmoid(x)
+        elif self.erl_activation == 'identity':
+            return x
+        else:
+            # Should never happen due to validation
+            return F.relu(x)
+
     def reset(self):
         if self.model_state is None or self.optimizer_state is None:
             raise Exception("cannot reset without saved model/optimizer state")
@@ -482,7 +672,8 @@ class EntREM(nn.Module):
 
         outputs_list = []
         self.model.eval()
-        for m in self.mn:
+        levels = self._current_levels()
+        for m in levels:
             if m == 0.0:
                 out = self.model(x, return_attn=False)
                 outputs_list.append(out)
@@ -520,49 +711,157 @@ class EntREM(nn.Module):
                 outputs_list.append(out)
         self.model.train()
 
+        # Compute entropies early if pruning or adaptive schedule or ERL needed
+        entropys = None
+        if self.prune_enable or (not self.disable_erl) or self.m_adaptive_enable:
+            entropys = [self.entropy(o) for o in outputs_list]
+
+        # Derive keep mask based on mask-induced entropy differential statistics
+        keep_mask = None
+        if self.prune_enable:
+            if entropys is None or len(entropys) < 2:
+                # No masked levels; default to keep all
+                keep_mask = torch.ones(B, dtype=torch.bool, device=x.device)
+                # Expose empty stats for evaluators
+                self._last_delta_mean = torch.zeros(B, device=x.device).detach().cpu()
+                self._last_delta_std = torch.zeros(B, device=x.device).detach().cpu()
+                self._last_keep_mask = keep_mask.detach().cpu()
+            else:
+                # Compute ΔH over masked levels relative to base (level 0)
+                deltas = []  # list of tensors [B]
+                base_h = entropys[0]
+                for i in range(1, len(entropys)):
+                    deltas.append(entropys[i] - base_h)
+                delta_stack = torch.stack(deltas, dim=0)  # [K, B]
+                delta_mean = delta_stack.mean(dim=0)      # [B]
+                delta_std = delta_stack.std(dim=0, unbiased=False)  # [B]
+                # Keep if mean within [mean_low, mean_high] AND std within [tau_low, tau_high]
+                keep_by_mean = (delta_mean >= self.prune_mean_low) & (delta_mean <= self.prune_mean_high)
+                keep_by_std = (delta_std >= self.prune_tau_low) & (delta_std <= self.prune_tau_high)
+                keep_mask = keep_by_mean & keep_by_std
+                # Expose stats for evaluators
+                self._last_delta_mean = delta_mean.detach().cpu()
+                self._last_delta_std = delta_std.detach().cpu()
+                self._last_keep_mask = keep_mask.detach().cpu()
+            # Guard against all-pruned edge case
+            if keep_mask is not None and keep_mask.sum().item() == 0:
+                # If everything would be pruned, fall back to keeping all to avoid degenerate update
+                keep_mask = torch.ones(B, dtype=torch.bool, device=x.device)
+                self._last_keep_mask = keep_mask.detach().cpu()
+        else:
+            # Clear exposed stats when pruning disabled
+            self._last_delta_mean = None
+            self._last_delta_std = None
+            self._last_keep_mask = None
+
         # Compute REM losses across masking levels
+        mcl_loss = None
+        erl_loss = None
+
         # Mask Consistency Loss (MCL)
-        mcl_loss = 0.0
-        for i in range(1, len(self.mn)):
-            if self.mcl_temperature < 1.0:
+        if not self.disable_mcl:
+            total = 0.0
+            for i in range(1, len(self.mn)):
                 if self.mcl_temperature_apply == 'teacher':
-                    mcl_loss = mcl_loss + softmax_entropy_temp_teacher(outputs_list[i], outputs_list[0].detach(), self.mcl_temperature).mean()
+                    term = softmax_entropy_temp_teacher(
+                        outputs_list[i], outputs_list[0].detach(), self.mcl_temperature
+                    )
                 elif self.mcl_temperature_apply == 'student':
-                    mcl_loss = mcl_loss + softmax_entropy_temp_student(outputs_list[i], outputs_list[0].detach(), self.mcl_temperature).mean()
+                    term = softmax_entropy_temp_student(
+                        outputs_list[i], outputs_list[0].detach(), self.mcl_temperature
+                    )
                 else:  # both
-                    mcl_loss = mcl_loss + softmax_entropy_temp(outputs_list[i], outputs_list[0].detach(), self.mcl_temperature).mean()
+                    term = softmax_entropy_temp(
+                        outputs_list[i], outputs_list[0].detach(), self.mcl_temperature
+                    )
+                if keep_mask is not None:
+                    if keep_mask.any():
+                        total = total + term[keep_mask].mean()
+                else:
+                    total = total + term.mean()
                 for j in range(1, i):
                     if self.mcl_temperature_apply == 'teacher':
-                        mcl_loss = mcl_loss + softmax_entropy_temp_teacher(outputs_list[i], outputs_list[j].detach(), self.mcl_temperature).mean()
+                        term_ij = softmax_entropy_temp_teacher(
+                            outputs_list[i], outputs_list[j].detach(), self.mcl_temperature
+                        )
                     elif self.mcl_temperature_apply == 'student':
-                        mcl_loss = mcl_loss + softmax_entropy_temp_student(outputs_list[i], outputs_list[j].detach(), self.mcl_temperature).mean()
+                        term_ij = softmax_entropy_temp_student(
+                            outputs_list[i], outputs_list[j].detach(), self.mcl_temperature
+                        )
                     else:
-                        mcl_loss = mcl_loss + softmax_entropy_temp(outputs_list[i], outputs_list[j].detach(), self.mcl_temperature).mean()
-            else:
-                # Temperature >= 1: use standard (equivalent to no temp or softened equally)
-                mcl_loss = mcl_loss + softmax_entropy(outputs_list[i], outputs_list[0].detach()).mean()
-                for j in range(1, i):
-                    mcl_loss = mcl_loss + softmax_entropy(outputs_list[i], outputs_list[j].detach()).mean()
+                        term_ij = softmax_entropy_temp(
+                            outputs_list[i], outputs_list[j].detach(), self.mcl_temperature
+                        )
+                    if keep_mask is not None:
+                        if keep_mask.any():
+                            total = total + term_ij[keep_mask].mean()
+                    else:
+                        total = total + term_ij.mean()
+            mcl_loss = total
 
-        entropys = [self.entropy(o) for o in outputs_list]
-        margin = self.margin * math.log(outputs_list[0].shape[-1])
-        erl_loss = 0.0
         # Entropy Ranking Loss (ERL)
-        for i in range(len(self.mn)):
-            for j in range(i + 1, len(self.mn)):
-                erl_loss = erl_loss + (F.relu(entropys[i] - entropys[j].detach() + margin)).mean()
+        if not self.disable_erl:
+            margin = self.margin * math.log(outputs_list[0].shape[-1])
+            total_erl = 0.0
+            levels_len = len(self._current_levels())
+            for i in range(levels_len):
+                for j in range(i + 1, levels_len):
+                    diff = entropys[i] - entropys[j].detach() + margin
+                    actv = self._apply_erl_activation(diff)
+                    if keep_mask is not None:
+                        if keep_mask.any():
+                            total_erl = total_erl + actv[keep_mask].mean()
+                    else:
+                        total_erl = total_erl + actv.mean()
+            erl_loss = total_erl
 
-        # Total loss
-        loss = mcl_loss + self.lamb * erl_loss
-        loss.backward()
-        optimizer.step()
-        optimizer.zero_grad()
+        # Total loss and optimizer step
+        loss_terms = []
+        if mcl_loss is not None:
+            loss_terms.append(mcl_loss)
+        if erl_loss is not None:
+            loss_terms.append(self.lamb * erl_loss)
 
-        # Update EMA trackers and save plot if enabled
-        self._update_and_plot_losses(
-            mcl_val=mcl_loss if isinstance(mcl_loss, torch.Tensor) else torch.tensor(mcl_loss),
-            erl_val=erl_loss if isinstance(erl_loss, torch.Tensor) else torch.tensor(erl_loss)
-        )
+        if len(loss_terms) > 0:
+            loss = loss_terms[0]
+            for lt in loss_terms[1:]:
+                loss = loss + lt
+            loss.backward()
+            optimizer.step()
+            optimizer.zero_grad()
 
-        # Return unmasked prediction
-        return outputs_list[0]
+        # Update EMA trackers and save plot if enabled (zero when disabled)
+        mcl_plot_val = mcl_loss if mcl_loss is not None else torch.tensor(0.0, device=x.device)
+        erl_plot_val = erl_loss if erl_loss is not None else torch.tensor(0.0, device=x.device)
+        self._update_and_plot_losses(mcl_val=mcl_plot_val, erl_val=erl_plot_val)
+
+        # Compute entropy-gap and update m schedule
+        if self.m_adaptive_enable and entropys is not None and len(entropys) >= 2:
+            # Gap as average consecutive difference across masked levels (exclude base level step if desired)
+            # Use all consecutive pairs to robustly estimate gap per step
+            diffs = []
+            levels = self._current_levels()
+            for i in range(1, len(levels)):
+                d = entropys[i] - entropys[i - 1]
+                if keep_mask is not None and keep_mask.any():
+                    diffs.append(d[keep_mask].mean())
+                else:
+                    diffs.append(d.mean())
+            if len(diffs) > 0:
+                gap_val = torch.stack(diffs).mean().detach().item()
+                self._step_adaptive(gap_val)
+        else:
+            # Monotonic progression if enabled
+            self._step_progress()
+
+        # Return predictions according to pruning preference
+        if self.prune_enable and keep_mask is not None:
+            if self.prune_skip_prediction:
+                # Return predictions for kept subset along with mask for downstream handling
+                return outputs_list[0][keep_mask], keep_mask.detach()
+            else:
+                # Return full-batch predictions but include keep_mask for counting
+                return outputs_list[0], keep_mask.detach()
+        else:
+            # Return full-batch predictions without mask if pruning disabled
+            return outputs_list[0]

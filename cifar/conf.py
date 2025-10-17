@@ -37,6 +37,10 @@ _C.MODEL.ADAPTATION = 'source'
 # By default tent is online, with updates persisting across batches.
 # To make adaptation episodic, and reset the model for each batch, choose True.
 _C.MODEL.EPISODIC = False
+ 
+# LayerNorm adaptation scope across transformer blocks (for ViT backbones)
+# Choices: 'default' (original behavior), 'q1','q2','q3','q4','all'
+_C.MODEL.LN_QUARTER = 'default'
 
 # ----------------------------- Corruption options -------------------------- #
 _C.CORRUPTION = CfgNode()
@@ -148,6 +152,16 @@ _C.OPTIM.ViDALR=1e-4
 # REM parameters
 _C.OPTIM.M = 0.1
 _C.OPTIM.N = 3
+_C.OPTIM.M_STEP = 0.0
+_C.OPTIM.M_TOP = 0.5
+_C.OPTIM.M_PROGRESS_ENABLE = False
+_C.OPTIM.M_PROGRESS_DIR = 'up'  # choices: 'up','down'
+_C.OPTIM.M_ADAPTIVE_ENABLE = False
+_C.OPTIM.M_GAP_TARGET = 0.2
+_C.OPTIM.M_GAP_KP = 0.05
+_C.OPTIM.M_MIN = 0.0
+_C.OPTIM.M_MAX = 0.8
+_C.OPTIM.M_ADAPT_SMOOTH = 0.9
 _C.OPTIM.LAMB = 1.0
 _C.OPTIM.MARGIN = 0.0
 
@@ -182,6 +196,18 @@ _C.ENTREM.PLOT_LOSS_PATH = ""
 _C.ENTREM.PLOT_EMA_ALPHA = 0.98
 _C.ENTREM.MCL_TEMPERATURE = 1.0
 _C.ENTREM.MCL_TEMPERATURE_APPLY = 'both'  # choices: 'teacher', 'student', 'both'
+_C.ENTREM.ERL_ACTIVATION = 'relu'         # choices: 'relu','leaky_relu','softplus','gelu','sigmoid','identity'
+_C.ENTREM.ERL_LEAKY_RELU_SLOPE = 0.01
+_C.ENTREM.ERL_SOFTPLUS_BETA = 1.0
+_C.ENTREM.DISABLE_MCL = False
+_C.ENTREM.DISABLE_ERL = False
+_C.ENTREM.PRUNE_ENABLE = False
+_C.ENTREM.PRUNE_TAU_LOW = 0.05
+_C.ENTREM.PRUNE_TAU_HIGH = 0.20
+_C.ENTREM.PRUNE_MEAN_LOW = 0.05
+_C.ENTREM.PRUNE_MEAN_HIGH = 0.40
+_C.ENTREM.PRUNE_SKIP_PREDICTION = False
+_C.ENTREM.PRUNE_RANDOM_RANGE = None
 
 # # Config destination (in SAVE_DIR)
 # _C.CFG_DEST = "cfg.yaml"
@@ -239,6 +265,11 @@ def load_cfg_fom_args(description="Config options."):
     #parser.add_argument("--data_dir", type=str, default='./data')
     parser.add_argument("--data_dir", type=str, default='/mnt/work1/cotta/continual-mae/cifar/data/')
 
+    # LayerNorm adaptation scope
+    parser.add_argument("--ln_quarter", type=str, default=None,
+                        choices=['default','q1','q2','q3','q4','all'],
+                        help="Which transformer block quarter's LayerNorms to adapt (ViT): default|q1|q2|q3|q4|all")
+
     parser.add_argument("--use_hog", action="store_true",
                     help="if use hog")
     parser.add_argument("--hog_ratio", type=float,
@@ -251,6 +282,29 @@ def load_cfg_fom_args(description="Config options."):
                         help="Masking increment per level in [0,1] (maps to OPTIM.M)")
     parser.add_argument("--n", type=int, default=None,
                         help="Number of masking levels (maps to OPTIM.N)")
+    parser.add_argument("--lr", type=float, default=None,
+                        help="Learning rate for optimizer (maps to OPTIM.LR)")
+    # Progressive masking curriculum
+    parser.add_argument("--m_step", type=float, default=None,
+                        help="Progressive step to add/subtract to masking increment m each batch (maps to OPTIM.M_STEP)")
+    parser.add_argument("--m_top", type=float, default=None,
+                        help="Upper (when up) or lower (when down) bound for progressive m (maps to OPTIM.M_TOP)")
+    parser.add_argument("--m_progress_enable", action="store_true",
+                        help="Enable progressive masking: update m by m_step toward m_top each batch")
+    parser.add_argument("--m_progress_dir", type=str, default=None, choices=['up','down'],
+                        help="Direction for progressive masking: 'up' increases m toward m_top, 'down' decreases m toward m_top")
+    parser.add_argument("--m_adaptive_enable", action="store_true",
+                        help="Enable adaptive m schedule driven by entropy-gap feedback")
+    parser.add_argument("--m_gap_target", type=float, default=None,
+                        help="Target entropy gap between masking views for adaptive m schedule")
+    parser.add_argument("--m_gap_kp", type=float, default=None,
+                        help="Proportional gain for adaptive m update (delta m = kp * (target - gap))")
+    parser.add_argument("--m_min", type=float, default=None,
+                        help="Lower bound for m when adapting/progressing")
+    parser.add_argument("--m_max", type=float, default=None,
+                        help="Upper bound for m when adapting/progressing")
+    parser.add_argument("--m_adapt_smooth", type=float, default=None,
+                        help="EMA smoothing (alpha in [0,1]) for entropy-gap signal in adaptive schedule")
     parser.add_argument("--lamb", type=float, default=None,
                         help="Lambda for entropy-ordering loss (maps to OPTIM.LAMB)")
     parser.add_argument("--margin", type=float, default=None,
@@ -275,6 +329,21 @@ def load_cfg_fom_args(description="Config options."):
                         help="Number of equal-size squares to place per masking level (default from cfg)")
     parser.add_argument("--mask_type", type=str, default=None, choices=['binary', 'gaussian', 'mean'],
                         help="How to fill masked regions: 'binary' (zero), 'gaussian' (blurred), or 'mean' (per-image mean)")
+    # EntREM pruning CLI options
+    parser.add_argument("--prune_enable", action="store_true",
+                        help="Enable pruning via mask-induced entropy differential")
+    parser.add_argument("--prune_tau_low", type=float, default=None,
+                        help="Lower bound of std band for entropy differential")
+    parser.add_argument("--prune_tau_high", type=float, default=None,
+                        help="Upper bound of std band for entropy differential")
+    parser.add_argument("--prune_mean_low", type=float, default=None,
+                        help="Lower bound of mean band for entropy differential")
+    parser.add_argument("--prune_mean_high", type=float, default=None,
+                        help="Upper bound of mean band for entropy differential")
+    parser.add_argument("--prune_skip_prediction", action="store_true",
+                        help="If set, pruned samples are excluded from prediction outputs and accuracy")
+    parser.add_argument("--prune_random_range", type=int, nargs=2, default=None,
+                        help="If set together with --prune_enable, randomly prune between A and B samples per corruption (absolute counts)")
     # EntREM plotting CLI options
     parser.add_argument("--plot_loss", action="store_true",
                         help="If set, save a PNG plot of EMA of MCL and ERL across steps")
@@ -282,11 +351,24 @@ def load_cfg_fom_args(description="Config options."):
                         help="Output path for the loss plot PNG")
     parser.add_argument("--plot_ema_alpha", type=float, default=None,
                         help="EMA alpha for smoothing MCL/ERL curves (e.g., 0.98)")
+    # Disable specific losses
+    parser.add_argument("--disable_mcl", action="store_true",
+                        help="Disable the Mask Consistency Loss (MCL) term")
+    parser.add_argument("--disable_erl", action="store_true",
+                        help="Disable the Entropy Ranking Loss (ERL) term")
     # MCL temperature
     parser.add_argument("--mcl_temperature", type=float, default=None,
                         help="Temperature for MCL softmax/log_softmax (default from cfg)")
     parser.add_argument("--mcl_temperature_apply", type=str, default=None, choices=['teacher','student','both'],
-                        help="Where to apply MCL temperature when <1: teacher, student, or both")
+                        help="Where to apply MCL temperature: teacher, student, or both")
+    # ERL activation options
+    parser.add_argument("--erl_activation", type=str, default=None,
+                        choices=['relu','leaky_relu','softplus','gelu','sigmoid','identity'],
+                        help="Activation function used in ERL margin term")
+    parser.add_argument("--erl_leaky_relu_slope", type=float, default=None,
+                        help="Negative slope for LeakyReLU when erl_activation=leaky_relu")
+    parser.add_argument("--erl_softplus_beta", type=float, default=None,
+                        help="Beta parameter for Softplus when erl_activation=softplus")
     # Phase-mix-then-mask CLI options
     parser.add_argument("--phase_mix_alpha", type=float, default=None,
                         help="Alpha in [0,1] for phase mix (1.0=magnitude-only counterpart)")
@@ -303,6 +385,10 @@ def load_cfg_fom_args(description="Config options."):
     cfg.DATA_DIR = args.data_dir
     cfg.TEST.ckpt = args.checkpoint
 
+    # Model LayerNorm selection from CLI
+    if args.ln_quarter is not None:
+        cfg.MODEL.LN_QUARTER = args.ln_quarter.lower()
+
     # Populate OPTIM from CLI if provided
     if args.steps is not None:
         cfg.OPTIM.STEPS = args.steps
@@ -310,6 +396,28 @@ def load_cfg_fom_args(description="Config options."):
         cfg.OPTIM.M = args.m
     if args.n is not None:
         cfg.OPTIM.N = args.n
+    if args.lr is not None:
+        cfg.OPTIM.LR = args.lr
+    if args.m_step is not None:
+        cfg.OPTIM.M_STEP = args.m_step
+    if args.m_top is not None:
+        cfg.OPTIM.M_TOP = args.m_top
+    if args.m_progress_enable:
+        cfg.OPTIM.M_PROGRESS_ENABLE = True
+    if args.m_progress_dir is not None:
+        cfg.OPTIM.M_PROGRESS_DIR = args.m_progress_dir
+    if args.m_adaptive_enable:
+        cfg.OPTIM.M_ADAPTIVE_ENABLE = True
+    if args.m_gap_target is not None:
+        cfg.OPTIM.M_GAP_TARGET = args.m_gap_target
+    if args.m_gap_kp is not None:
+        cfg.OPTIM.M_GAP_KP = args.m_gap_kp
+    if args.m_min is not None:
+        cfg.OPTIM.M_MIN = args.m_min
+    if args.m_max is not None:
+        cfg.OPTIM.M_MAX = args.m_max
+    if args.m_adapt_smooth is not None:
+        cfg.OPTIM.M_ADAPT_SMOOTH = args.m_adapt_smooth
     if args.lamb is not None:
         cfg.OPTIM.LAMB = args.lamb
     if args.margin is not None:
@@ -343,11 +451,39 @@ def load_cfg_fom_args(description="Config options."):
         cfg.ENTREM.PLOT_LOSS_PATH = args.plot_loss_path
     if args.plot_ema_alpha is not None:
         cfg.ENTREM.PLOT_EMA_ALPHA = args.plot_ema_alpha
+    # Disable flags
+    if args.disable_mcl:
+        cfg.ENTREM.DISABLE_MCL = True
+    if args.disable_erl:
+        cfg.ENTREM.DISABLE_ERL = True
     # MCL temperature
     if args.mcl_temperature is not None:
         cfg.ENTREM.MCL_TEMPERATURE = args.mcl_temperature
     if args.mcl_temperature_apply is not None:
         cfg.ENTREM.MCL_TEMPERATURE_APPLY = args.mcl_temperature_apply.lower()
+    # ERL activation
+    if args.erl_activation is not None:
+        cfg.ENTREM.ERL_ACTIVATION = args.erl_activation.lower()
+    if args.erl_leaky_relu_slope is not None:
+        cfg.ENTREM.ERL_LEAKY_RELU_SLOPE = args.erl_leaky_relu_slope
+    if args.erl_softplus_beta is not None:
+        cfg.ENTREM.ERL_SOFTPLUS_BETA = args.erl_softplus_beta
+    # Pruning options
+    if args.prune_enable:
+        cfg.ENTREM.PRUNE_ENABLE = True
+    if args.prune_tau_low is not None:
+        cfg.ENTREM.PRUNE_TAU_LOW = args.prune_tau_low
+    if args.prune_tau_high is not None:
+        cfg.ENTREM.PRUNE_TAU_HIGH = args.prune_tau_high
+    if args.prune_mean_low is not None:
+        cfg.ENTREM.PRUNE_MEAN_LOW = args.prune_mean_low
+    if args.prune_mean_high is not None:
+        cfg.ENTREM.PRUNE_MEAN_HIGH = args.prune_mean_high
+    if args.prune_skip_prediction:
+        cfg.ENTREM.PRUNE_SKIP_PREDICTION = True
+    if args.prune_random_range is not None:
+        # store as list [A, B]
+        cfg.ENTREM.PRUNE_RANDOM_RANGE = list(args.prune_random_range)
 
     # Populate PHASEMIX from CLI if provided
     if args.phase_mix_alpha is not None:
