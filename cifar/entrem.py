@@ -8,6 +8,8 @@ import os
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+from typing import Tuple, List
+from contextlib import contextmanager
 
 
 class Entropy(nn.Module):
@@ -531,6 +533,18 @@ class EntREM(nn.Module):
         self.prune_skip_prediction = bool(prune_skip_prediction)
         # Optional dataset-level random prune range (A,B), stored for reference/logging; pruning is applied in eval scripts
         self.prune_random_range = prune_random_range
+        # eval-only flag to bypass adaptation updates
+        self._eval_only = False
+
+    @contextmanager
+    def no_adapt_mode(self):
+        """Context manager to temporarily disable adaptation updates."""
+        prev_eval_only = self._eval_only
+        self._eval_only = True
+        try:
+            yield
+        finally:
+            self._eval_only = prev_eval_only
 
     def _current_levels(self):
         """Compute masking levels for this batch.
@@ -649,7 +663,15 @@ class EntREM(nn.Module):
             out = self.forward_and_adapt(x, self.optimizer)
         return out
 
-    def forward_and_adapt(self, x: torch.Tensor, optimizer: torch.optim.Optimizer):
+    def forward_and_adapt(self, x: torch.Tensor, optimizer: torch.optim.Optimizer,
+                          **kwargs) -> torch.Tensor:
+        """Forward pass with multiple masked views and adaptation update."""
+        # If in eval-only probe mode, bypass masking/adaptation and return base logits
+        if getattr(self, "_eval_only", False):
+            self.model.eval()
+            with torch.no_grad():
+                return self.model(x, return_attn=False)
+
         # Ensure size is divisible by patch_size
         B, C, H, W = x.shape
         if H % self.patch_size != 0 or W % self.patch_size != 0:
@@ -719,35 +741,42 @@ class EntREM(nn.Module):
         # Derive keep mask based on mask-induced entropy differential statistics
         keep_mask = None
         if self.prune_enable:
-            if entropys is None or len(entropys) < 2:
-                # No masked levels; default to keep all
-                keep_mask = torch.ones(B, dtype=torch.bool, device=x.device)
-                # Expose empty stats for evaluators
-                self._last_delta_mean = torch.zeros(B, device=x.device).detach().cpu()
-                self._last_delta_std = torch.zeros(B, device=x.device).detach().cpu()
-                self._last_keep_mask = keep_mask.detach().cpu()
+            # When dataset-level random pruning is active, skip internal prune-category processing entirely
+            if self.prune_random_range is not None:
+                self._last_delta_mean = None
+                self._last_delta_std = None
+                self._last_keep_mask = None
+                keep_mask = None
             else:
-                # Compute ΔH over masked levels relative to base (level 0)
-                deltas = []  # list of tensors [B]
-                base_h = entropys[0]
-                for i in range(1, len(entropys)):
-                    deltas.append(entropys[i] - base_h)
-                delta_stack = torch.stack(deltas, dim=0)  # [K, B]
-                delta_mean = delta_stack.mean(dim=0)      # [B]
-                delta_std = delta_stack.std(dim=0, unbiased=False)  # [B]
-                # Keep if mean within [mean_low, mean_high] AND std within [tau_low, tau_high]
-                keep_by_mean = (delta_mean >= self.prune_mean_low) & (delta_mean <= self.prune_mean_high)
-                keep_by_std = (delta_std >= self.prune_tau_low) & (delta_std <= self.prune_tau_high)
-                keep_mask = keep_by_mean & keep_by_std
-                # Expose stats for evaluators
-                self._last_delta_mean = delta_mean.detach().cpu()
-                self._last_delta_std = delta_std.detach().cpu()
-                self._last_keep_mask = keep_mask.detach().cpu()
-            # Guard against all-pruned edge case
-            if keep_mask is not None and keep_mask.sum().item() == 0:
-                # If everything would be pruned, fall back to keeping all to avoid degenerate update
-                keep_mask = torch.ones(B, dtype=torch.bool, device=x.device)
-                self._last_keep_mask = keep_mask.detach().cpu()
+                if entropys is None or len(entropys) < 2:
+                    # No masked levels; default to keep all
+                    keep_mask = torch.ones(B, dtype=torch.bool, device=x.device)
+                    # Expose empty stats for evaluators
+                    self._last_delta_mean = torch.zeros(B, device=x.device).detach().cpu()
+                    self._last_delta_std = torch.zeros(B, device=x.device).detach().cpu()
+                    self._last_keep_mask = keep_mask.detach().cpu()
+                else:
+                    # Compute ΔH over masked levels relative to base (level 0)
+                    deltas = []  # list of tensors [B]
+                    base_h = entropys[0]
+                    for i in range(1, len(entropys)):
+                        deltas.append(entropys[i] - base_h)
+                    delta_stack = torch.stack(deltas, dim=0)  # [K, B]
+                    delta_mean = delta_stack.mean(dim=0)      # [B]
+                    delta_std = delta_stack.std(dim=0, unbiased=False)  # [B]
+                    # Keep if mean within [mean_low, mean_high] AND std within [tau_low, tau_high]
+                    keep_by_mean = (delta_mean >= self.prune_mean_low) & (delta_mean <= self.prune_mean_high)
+                    keep_by_std = (delta_std >= self.prune_tau_low) & (delta_std <= self.prune_tau_high)
+                    keep_mask = keep_by_mean & keep_by_std
+                    # Expose stats for evaluators
+                    self._last_delta_mean = delta_mean.detach().cpu()
+                    self._last_delta_std = delta_std.detach().cpu()
+                    self._last_keep_mask = keep_mask.detach().cpu()
+                # Guard against all-pruned edge case
+                if keep_mask is not None and keep_mask.sum().item() == 0:
+                    # If everything would be pruned, fall back to keeping all to avoid degenerate update
+                    keep_mask = torch.ones(B, dtype=torch.bool, device=x.device)
+                    self._last_keep_mask = keep_mask.detach().cpu()
         else:
             # Clear exposed stats when pruning disabled
             self._last_delta_mean = None

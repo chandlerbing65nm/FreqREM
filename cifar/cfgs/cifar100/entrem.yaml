@@ -1,6 +1,7 @@
 MODEL:
   ADAPTATION: REM
   ARCH: Standard_VITB_REM   # VIT: Standard_VITB  CNN: Standard
+  LN_QUARTER: default       # LayerNorm adaptation scope: default|q1|q2|q3|q4|all
 TEST:
   BATCH_SIZE: 20
 CORRUPTION:
@@ -33,14 +34,38 @@ OPTIM:
   N: 3
   LAMB: 1.0
   MARGIN: 0.0
+  # Progressive masking curriculum
+  M_STEP: 0.0         # set >0 to enable stepping via M_PROGRESS_ENABLE
+  M_TOP: 0.5          # bound target for m (max when 'up', min when 'down')
+  M_PROGRESS_ENABLE: false
+  M_PROGRESS_DIR: up  # 'up' increases m toward M_TOP; 'down' decreases toward M_TOP
 
 # EntREM defaults (can be overridden by CLI args)
 ENTREM:
   PATCH_SIZE: 8
   NUM_BINS: 32
-  LEVELS: [0, 10, 20]
+  LEVELS: [0, 10, 20] # not used at the moment, it's a redundancy of M and N above
   USE_COLOR_ENTROPY: True
   ENTROPY_WEIGHT_POWER: 2.0
-  RANDOM_MASKING: False
+  # Random erasing
+  RANDOM_MASKING: True
   NUM_SQUARES: 1
   MASK_TYPE: binary
+  # Plotting losses
+  PLOT_LOSS: false
+  PLOT_LOSS_PATH: /users/doloriel/work/Repo/FreqREM/cifar/plots/EntREM/Loss/losses.png
+  PLOT_EMA_ALPHA: 0.98
+  # MCL and ERL activation
+  MCL_TEMPERATURE: 1.0
+  MCL_TEMPERATURE_APPLY: both
+  ERL_ACTIVATION: relu
+  ERL_LEAKY_RELU_SLOPE: 0.01
+  ERL_SOFTPLUS_BETA: 1.0
+  # Pruning via mask-induced entropy differential
+  PRUNE_ENABLE: false
+  PRUNE_TAU_LOW: 0.001
+  PRUNE_TAU_HIGH: 0.6
+  PRUNE_MEAN_LOW: 0.001
+  PRUNE_MEAN_HIGH: 1.0
+  PRUNE_SKIP_PREDICTION: false
+  PRUNE_RANDOM_RANGE: null

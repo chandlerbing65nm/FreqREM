@@ -1,4 +1,6 @@
 import logging
+import time
+from contextlib import nullcontext
 from collections import OrderedDict
 
 import torch
@@ -63,6 +65,22 @@ def evaluate(description):
 
     # evaluate on each severity and type of corruption in turn
     all_error = []
+    accs_so_far = []  # for domain shift robustness
+    prev_x = None
+    prev_y = None
+    prev_acc_at_time = None
+
+    # Helper: format large numbers in base-10 scientific notation
+    def fmt_sci(n: int) -> str:
+        try:
+            if n == 0:
+                return "0"
+            import math
+            exp = int(math.floor(math.log10(abs(float(n)))))
+            mant = float(n) / (10 ** exp)
+            return f"{mant:.3f} x 10^{exp}"
+        except Exception:
+            return str(n)
     for severity in cfg.CORRUPTION.SEVERITY:
         for i_c, corruption_type in enumerate(cfg.CORRUPTION.TYPE):
             if i_c == 0:
@@ -97,11 +115,12 @@ def evaluate(description):
                 idx = torch.randperm(N)[:k]
                 prune_mask = torch.zeros(N, dtype=torch.bool)
                 prune_mask[idx] = True
+                logger.info(f"dataset-prune: requested range=({cfg.ENTREM.PRUNE_RANDOM_RANGE[0]}, {cfg.ENTREM.PRUNE_RANDOM_RANGE[1]}), N={N}, k={k}, kept={N - k}")
 
             metrics = compute_metrics_prune_aware(
                 model, x_test, y_test, cfg.TEST.BATCH_SIZE, device=device, prune_mask=prune_mask
             )
-            acc, nll, ece, total_cnt, adapt_pruned_cnt, pred_pruned_cnt, std_below_low, std_above_high, mean_below_low, mean_above_high = metrics
+            acc, nll, ece, total_cnt, adapt_pruned_cnt, pred_pruned_cnt, std_below_low, std_above_high, mean_below_low, mean_above_high, adapt_time_total, adapt_macs_total = metrics
             logger.info(
                 f"counts [{corruption_type}{severity}] total={total_cnt}, not_in_adapt={adapt_pruned_cnt}, not_in_pred={pred_pruned_cnt}"
             )
@@ -113,9 +132,39 @@ def evaluate(description):
                 )
             err = 1. - acc
             all_error.append(err)
-            logger.info(f"error % [{corruption_type}{severity}]: {err:.2%}")
+            logger.info(f"Error % [{corruption_type}{severity}]: {err:.2%}")
             logger.info(f"NLL [{corruption_type}{severity}]: {nll:.4f}")
             logger.info(f"ECE [{corruption_type}{severity}]: {ece:.4f}")
+            # New metrics per corruption (averaged per corruption)
+            logger.info(f"Adaptation Time (lower is better) [{corruption_type}{severity}]: {adapt_time_total:.3f}s")
+            logger.info(f"Adaptation MACs (lower is better) [{corruption_type}{severity}]: {fmt_sci(adapt_macs_total)}")
+
+            # Domain Shift Robustness: std of accuracies across types so far (lower is better)
+            accs_so_far.append(acc)
+            if len(accs_so_far) >= 2:
+                import math
+                mean_acc = sum(accs_so_far) / float(len(accs_so_far))
+                var_acc = sum((a - mean_acc) ** 2 for a in accs_so_far) / float(len(accs_so_far))
+                dsr = math.sqrt(var_acc)
+            else:
+                dsr = 0.0
+            logger.info(f"Domain Shift Robustness (std, lower is better) up to [{corruption_type}{severity}]: {dsr:.4f}")
+
+            # Catastrophic Forgetting Rate (measured): re-evaluate previous corruption after current adaptation
+            if prev_x is not None and prev_y is not None and prev_acc_at_time is not None:
+                try:
+                    entrem_model = model.module if hasattr(model, 'module') else model
+                    ctx = entrem_model.no_adapt_mode() if hasattr(entrem_model, 'no_adapt_mode') else nullcontext()
+                except Exception:
+                    ctx = nullcontext()
+                with ctx:
+                    re_metrics = compute_metrics_prune_aware(
+                        model, prev_x, prev_y, cfg.TEST.BATCH_SIZE, device=device, prune_mask=None
+                    )
+                    re_acc = re_metrics[0]
+                cfr_measured = max(0.0, float(prev_acc_at_time) - float(re_acc))
+                logger.info(f"Catastrophic Forgetting Rate (prev-domain, lower is better) after [{corruption_type}{severity}]: {cfr_measured:.4f}")
+            prev_x, prev_y, prev_acc_at_time = x_test, y_test, acc
 
 
 def setup_source(model):
@@ -150,48 +199,140 @@ def compute_metrics_prune_aware(model: nn.Module,
     mean_below_low = 0
     mean_above_high = 0
 
+    # Only compute/report prune categories when no dataset-level random pruning is used
+    enable_prune_categories = prune_mask is None
+
+    # Adaptation timing and MACs accumulators
+    adapt_time_total = 0.0
+    adapt_macs_total = 0
+
+    def estimate_vit_macs_per_image(stats_src, img_size: int) -> int:
+        try:
+            m = stats_src
+            # Unwrap EntREM and DataParallel to reach underlying ViT
+            if hasattr(m, 'module'):
+                m = m.module
+            if hasattr(m, 'model'):
+                m = m.model
+            if hasattr(m, 'module'):
+                m = m.module
+            ps = m.patch_embed.proj.weight.shape[2]
+            D = getattr(m, 'embed_dim', m.head.in_features)
+            depth = len(m.blocks)
+            D_m = m.blocks[0].mlp.fc1.out_features
+            mlp_ratio = float(D_m) / float(D)
+            Ph = img_size // ps
+            Pw = img_size // ps
+            L = 1 + (Ph * Pw)
+            C_in = m.patch_embed.proj.weight.shape[1]
+            macs_patch = (Ph * Pw) * (C_in * D * ps * ps)
+            per_block = (3 * L * D * D) + (2 * L * L * D) + (L * D * D) + (2 * L * D * int(mlp_ratio * D))
+            macs_blocks = depth * per_block
+            num_classes = m.head.out_features if hasattr(m.head, 'out_features') else 1000
+            macs_head = D * num_classes
+            total = macs_patch + macs_blocks + macs_head
+            return int(total)
+        except Exception:
+            return 0
+
     with torch.no_grad():
         for b in range(n_batches):
             start = b * batch_size
             end = min((b + 1) * batch_size, total_N)
-            x_b = x[start:end]
-            y_b = y[start:end]
+            x_b_full = x[start:end]
+            y_b_full = y[start:end]
+
+            x_b_full = x_b_full.to(device)
+            y_b_full = y_b_full.to(device)
+
+            pm_b = None
+            keep_b = None
+            per_img_macs = 0
+            macs_counted = False
             if prune_mask is not None:
                 pm_b = prune_mask[start:end]
                 keep_b = (~pm_b)
                 adapt_pruned_total += int(pm_b.sum().item())
-                pred_pruned_total += int(pm_b.sum().item())
-                if not keep_b.any():
-                    continue
-                x_b = x_b[keep_b]
-                y_b = y_b[keep_b]
-            x_b = x_b.to(device)
-            y_b = y_b.to(device)
 
-            output = model(x_b)
-            stats_src = model.module if hasattr(model, 'module') else model
-            if hasattr(cfg, 'ENTREM') and cfg.ENTREM.PRUNE_ENABLE and \
-               hasattr(stats_src, '_last_delta_mean') and hasattr(stats_src, '_last_delta_std') and \
-               (stats_src._last_delta_mean is not None) and (stats_src._last_delta_std is not None):
-                try:
-                    dm = torch.as_tensor(stats_src._last_delta_mean)
-                    ds = torch.as_tensor(stats_src._last_delta_std)
-                    std_below_low += int((ds < cfg.ENTREM.PRUNE_TAU_LOW).sum().item())
-                    std_above_high += int((ds > cfg.ENTREM.PRUNE_TAU_HIGH).sum().item())
-                    mean_below_low += int((dm < cfg.ENTREM.PRUNE_MEAN_LOW).sum().item())
-                    mean_above_high += int((dm > cfg.ENTREM.PRUNE_MEAN_HIGH).sum().item())
-                except Exception:
+                if keep_b.any():
+                    x_adapt = x_b_full[keep_b]
+                    t0 = time.time()
+                    _ = model(x_adapt)
+                    adapt_time_total += (time.time() - t0)
+                    stats_src = model.module if hasattr(model, 'module') else model
+                    per_img_macs = estimate_vit_macs_per_image(stats_src, img_size=x_b_full.shape[-1])
+                    adapt_macs_total += per_img_macs * int(x_adapt.shape[0])
+                    macs_counted = True
+                else:
                     pass
+
+                stats_src = model.module if hasattr(model, 'module') else model
+                if enable_prune_categories and hasattr(cfg, 'ENTREM') and cfg.ENTREM.PRUNE_ENABLE and \
+                   hasattr(stats_src, '_last_delta_mean') and hasattr(stats_src, '_last_delta_std') and \
+                   (stats_src._last_delta_mean is not None) and (stats_src._last_delta_std is not None):
+                    try:
+                        dm = torch.as_tensor(stats_src._last_delta_mean)
+                        ds = torch.as_tensor(stats_src._last_delta_std)
+                        std_below_low += int((ds < cfg.ENTREM.PRUNE_TAU_LOW).sum().item())
+                        std_above_high += int((ds > cfg.ENTREM.PRUNE_TAU_HIGH).sum().item())
+                        mean_below_low += int((dm < cfg.ENTREM.PRUNE_MEAN_LOW).sum().item())
+                        mean_above_high += int((dm > cfg.ENTREM.PRUNE_MEAN_HIGH).sum().item())
+                    except Exception:
+                        pass
+
+                if cfg.ENTREM.PRUNE_SKIP_PREDICTION:
+                    if keep_b.any():
+                        with (stats_src.no_adapt_mode() if hasattr(stats_src, 'no_adapt_mode') else torch.no_grad()):
+                            output = model(x_b_full[keep_b])
+                        pred_pruned_total += int(pm_b.sum().item())
+                        y_eval = y_b_full[keep_b]
+                    else:
+                        continue
+                else:
+                    with (stats_src.no_adapt_mode() if hasattr(stats_src, 'no_adapt_mode') else torch.no_grad()):
+                        output = model(x_b_full)
+                    y_eval = y_b_full
+            else:
+                t0 = time.time()
+                output = model(x_b_full)
+                adapt_time_total += (time.time() - t0)
+                stats_src = model.module if hasattr(model, 'module') else model
+                if enable_prune_categories and hasattr(cfg, 'ENTREM') and cfg.ENTREM.PRUNE_ENABLE and \
+                   hasattr(stats_src, '_last_delta_mean') and hasattr(stats_src, '_last_delta_std') and \
+                   (stats_src._last_delta_mean is not None) and (stats_src._last_delta_std is not None):
+                    try:
+                        dm = torch.as_tensor(stats_src._last_delta_mean)
+                        ds = torch.as_tensor(stats_src._last_delta_std)
+                        std_below_low += int((ds < cfg.ENTREM.PRUNE_TAU_LOW).sum().item())
+                        std_above_high += int((ds > cfg.ENTREM.PRUNE_TAU_HIGH).sum().item())
+                        mean_below_low += int((dm < cfg.ENTREM.PRUNE_MEAN_LOW).sum().item())
+                        mean_above_high += int((dm > cfg.ENTREM.PRUNE_MEAN_HIGH).sum().item())
+                    except Exception:
+                        pass
+                per_img_macs = estimate_vit_macs_per_image(stats_src, img_size=x_b_full.shape[-1])
+                if not (hasattr(cfg, 'ENTREM') and cfg.ENTREM.PRUNE_ENABLE):
+                    adapt_macs_total += per_img_macs * int(x_b_full.shape[0])
+                    macs_counted = True
+                else:
+                    base = model.module if hasattr(model, 'module') else model
+                    if hasattr(base, '_last_keep_mask') and base._last_keep_mask is not None:
+                        kept = int(torch.as_tensor(base._last_keep_mask, device=x_b_full.device).sum().item())
+                        adapt_macs_total += per_img_macs * kept
+                        macs_counted = True
+                y_eval = y_b_full
 
             if isinstance(output, tuple) and len(output) == 2:
                 logits, keep_mask = output
                 if keep_mask is not None and keep_mask.dtype == torch.bool:
                     kept = int(keep_mask.sum().item())
-                    adapt_pruned = y_b.shape[0] - kept
+                    adapt_pruned = y_eval.shape[0] - kept
                     adapt_pruned_total += int(adapt_pruned)
-                    if logits.shape[0] != y_b.shape[0]:
-                        pred_pruned_total += int(y_b.shape[0] - logits.shape[0])
-                        y_sel = y_b[keep_mask]
+                    if (not macs_counted) and per_img_macs:
+                        adapt_macs_total += per_img_macs * kept
+                        macs_counted = True
+                    if logits.shape[0] != y_eval.shape[0]:
+                        pred_pruned_total += int(y_eval.shape[0] - logits.shape[0])
+                        y_sel = y_eval[keep_mask]
                         if y_sel.numel() == 0:
                             continue
                         preds = logits.argmax(dim=1)
@@ -204,43 +345,36 @@ def compute_metrics_prune_aware(model: nn.Module,
                         correct_all.append((preds == y_sel).detach().cpu())
                     else:
                         preds = logits.argmax(dim=1)
-                        correct += (preds == y_b).float().sum().item()
-                        total_eval += y_b.shape[0]
-                        nll_sum += F.cross_entropy(logits, y_b, reduction='sum').item()
+                        correct += (preds == y_eval).float().sum().item()
+                        total_eval += y_eval.shape[0]
+                        nll_sum += F.cross_entropy(logits, y_eval, reduction='sum').item()
                         probs = logits.softmax(dim=1)
                         confs = probs.max(dim=1).values
                         confs_all.append(confs.detach().cpu())
-                        correct_all.append((preds == y_b).detach().cpu())
-                else:
-                    logits = output[0]
-                    preds = logits.argmax(dim=1)
-                    correct += (preds == y_b).float().sum().item()
-                    total_eval += y_b.shape[0]
-                    nll_sum += F.cross_entropy(logits, y_b, reduction='sum').item()
-                    probs = logits.softmax(dim=1)
-                    confs = probs.max(dim=1).values
-                    confs_all.append(confs.detach().cpu())
-                    correct_all.append((preds == y_b).detach().cpu())
+                        correct_all.append((preds == y_eval).detach().cpu())
             else:
                 logits = output
                 preds = logits.argmax(dim=1)
-                correct += (preds == y_b).float().sum().item()
-                total_eval += y_b.shape[0]
-                nll_sum += F.cross_entropy(logits, y_b, reduction='sum').item()
+                correct += (preds == y_eval).float().sum().item()
+                total_eval += y_eval.shape[0]
+                nll_sum += F.cross_entropy(logits, y_eval, reduction='sum').item()
                 probs = logits.softmax(dim=1)
                 confs = probs.max(dim=1).values
                 confs_all.append(confs.detach().cpu())
-                correct_all.append((preds == y_b).detach().cpu())
+                correct_all.append((preds == y_eval).detach().cpu())
 
     if total_eval == 0:
-        return 0.0, 0.0, 0.0, total_N, adapt_pruned_total, pred_pruned_total, None, None, None, None
+        return 0.0, 0.0, 0.0, total_N, adapt_pruned_total, pred_pruned_total, None, None, None, None, adapt_time_total, adapt_macs_total
 
     acc = correct / total_eval
     nll = nll_sum / total_eval
     confs_all = torch.cat(confs_all) if len(confs_all) else torch.empty(0)
     correct_all = torch.cat(correct_all).float() if len(correct_all) else torch.empty(0)
     ece = compute_ece(confs_all, correct_all)
-    return acc, nll, ece, total_N, adapt_pruned_total, pred_pruned_total, std_below_low, std_above_high, mean_below_low, mean_above_high
+    if enable_prune_categories:
+        return acc, nll, ece, total_N, adapt_pruned_total, pred_pruned_total, std_below_low, std_above_high, mean_below_low, mean_above_high, adapt_time_total, adapt_macs_total
+    else:
+        return acc, nll, ece, total_N, adapt_pruned_total, pred_pruned_total, None, None, None, None, adapt_time_total, adapt_macs_total
 
 
 def compute_ece(confs: torch.Tensor, correct: torch.Tensor, n_bins: int = 15) -> float:
