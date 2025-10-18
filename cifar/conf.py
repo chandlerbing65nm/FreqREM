@@ -181,33 +181,33 @@ _C.PHASE.CWAL_THRESHOLD = 0.7
 _C.PHASEMIX = CfgNode()
 _C.PHASEMIX.ALPHA = 1.0
 
-# Entropy-based REM (EntREM) options
-_C.ENTREM = CfgNode()
-_C.ENTREM.PATCH_SIZE = 16
-_C.ENTREM.NUM_BINS = 32
-_C.ENTREM.LEVELS = [0, 10, 20]
-_C.ENTREM.USE_COLOR_ENTROPY = False
-_C.ENTREM.ENTROPY_WEIGHT_POWER = 2.0
-_C.ENTREM.RANDOM_MASKING = False
-_C.ENTREM.NUM_SQUARES = 1
-_C.ENTREM.MASK_TYPE = 'binary'  # choices: 'binary', 'gaussian', 'mean'
-_C.ENTREM.PLOT_LOSS = False
-_C.ENTREM.PLOT_LOSS_PATH = ""
-_C.ENTREM.PLOT_EMA_ALPHA = 0.98
-_C.ENTREM.MCL_TEMPERATURE = 1.0
-_C.ENTREM.MCL_TEMPERATURE_APPLY = 'both'  # choices: 'teacher', 'student', 'both'
-_C.ENTREM.ERL_ACTIVATION = 'relu'         # choices: 'relu','leaky_relu','softplus','gelu','sigmoid','identity'
-_C.ENTREM.ERL_LEAKY_RELU_SLOPE = 0.01
-_C.ENTREM.ERL_SOFTPLUS_BETA = 1.0
-_C.ENTREM.DISABLE_MCL = False
-_C.ENTREM.DISABLE_ERL = False
-_C.ENTREM.PRUNE_ENABLE = False
-_C.ENTREM.PRUNE_TAU_LOW = 0.05
-_C.ENTREM.PRUNE_TAU_HIGH = 0.20
-_C.ENTREM.PRUNE_MEAN_LOW = 0.05
-_C.ENTREM.PRUNE_MEAN_HIGH = 0.40
-_C.ENTREM.PRUNE_SKIP_PREDICTION = False
-_C.ENTREM.PRUNE_RANDOM_RANGE = None
+# Entropy-based REM (SPARE) options
+_C.SPARE = CfgNode()
+_C.SPARE.PATCH_SIZE = 16
+_C.SPARE.NUM_BINS = 32
+_C.SPARE.LEVELS = [0, 10, 20]
+_C.SPARE.USE_COLOR_ENTROPY = False
+_C.SPARE.ENTROPY_WEIGHT_POWER = 2.0
+_C.SPARE.RANDOM_MASKING = False
+_C.SPARE.NUM_SQUARES = 1
+_C.SPARE.MASK_TYPE = 'binary'  # choices: 'binary', 'gaussian', 'mean'
+_C.SPARE.PLOT_LOSS = False
+_C.SPARE.PLOT_LOSS_PATH = ""
+_C.SPARE.PLOT_EMA_ALPHA = 0.98
+_C.SPARE.MCL_TEMPERATURE = 1.0
+_C.SPARE.MCL_TEMPERATURE_APPLY = 'both'  # choices: 'teacher', 'student', 'both'
+_C.SPARE.ERL_ACTIVATION = 'relu'         # choices: 'relu','leaky_relu','softplus','gelu','sigmoid','identity'
+_C.SPARE.ERL_LEAKY_RELU_SLOPE = 0.01
+_C.SPARE.ERL_SOFTPLUS_BETA = 1.0
+_C.SPARE.DISABLE_MCL = False
+_C.SPARE.DISABLE_ERL = False
+_C.SPARE.PRUNE_ENABLE = False
+_C.SPARE.PRUNE_TAU_LOW = 0.05
+_C.SPARE.PRUNE_TAU_HIGH = 0.20
+_C.SPARE.PRUNE_MEAN_LOW = 0.05
+_C.SPARE.PRUNE_MEAN_HIGH = 0.40
+_C.SPARE.PRUNE_SKIP_PREDICTION = False
+_C.SPARE.PRUNE_RANDOM_RANGE = None
 
 # # Config destination (in SAVE_DIR)
 # _C.CFG_DEST = "cfg.yaml"
@@ -275,7 +275,7 @@ def load_cfg_fom_args(description="Config options."):
     parser.add_argument("--hog_ratio", type=float,
                     help="hog ratio")
 
-    # REM/EntREM optimization CLI options
+    # REM/SPARE optimization CLI options
     parser.add_argument("--steps", type=int, default=None,
                         help="Number of adaptation updates per batch (maps to OPTIM.STEPS)")
     parser.add_argument("--m", type=float, default=None,
@@ -310,7 +310,7 @@ def load_cfg_fom_args(description="Config options."):
     parser.add_argument("--margin", type=float, default=None,
                         help="Margin multiplier in entropy-ordering loss (maps to OPTIM.MARGIN)")
 
-    # EntREM-specific CLI options
+    # SPARE-specific CLI options
     parser.add_argument("--patch_size", type=int, default=None,
                         help="Patch size for entropy-based masking (default from cfg)")
     parser.add_argument("--num_bins", type=int, default=None,
@@ -329,7 +329,7 @@ def load_cfg_fom_args(description="Config options."):
                         help="Number of equal-size squares to place per masking level (default from cfg)")
     parser.add_argument("--mask_type", type=str, default=None, choices=['binary', 'gaussian', 'mean'],
                         help="How to fill masked regions: 'binary' (zero), 'gaussian' (blurred), or 'mean' (per-image mean)")
-    # EntREM pruning CLI options
+    # SPARE pruning CLI options
     parser.add_argument("--prune_enable", action="store_true",
                         help="Enable pruning via mask-induced entropy differential")
     parser.add_argument("--prune_tau_low", type=float, default=None,
@@ -344,7 +344,7 @@ def load_cfg_fom_args(description="Config options."):
                         help="If set, pruned samples are excluded from prediction outputs and accuracy")
     parser.add_argument("--prune_random_range", type=int, nargs=2, default=None,
                         help="If set together with --prune_enable, randomly prune between A and B samples per corruption (absolute counts)")
-    # EntREM plotting CLI options
+    # SPARE plotting CLI options
     parser.add_argument("--plot_loss", action="store_true",
                         help="If set, save a PNG plot of EMA of MCL and ERL across steps")
     parser.add_argument("--plot_loss_path", type=str, default=None,
@@ -426,64 +426,64 @@ def load_cfg_fom_args(description="Config options."):
     cfg.use_hog = args.use_hog
     cfg.hog_ratio = args.hog_ratio
 
-    # Populate EntREM config from CLI if provided
+    # Populate SPARE config from CLI if provided
     if args.patch_size is not None:
-        cfg.ENTREM.PATCH_SIZE = args.patch_size
+        cfg.SPARE.PATCH_SIZE = args.patch_size
     if args.num_bins is not None:
-        cfg.ENTREM.NUM_BINS = args.num_bins
+        cfg.SPARE.NUM_BINS = args.num_bins
     if args.entropy_bins is not None:
-        cfg.ENTREM.NUM_BINS = args.entropy_bins
+        cfg.SPARE.NUM_BINS = args.entropy_bins
     if args.entropy_levels is not None:
-        cfg.ENTREM.LEVELS = args.entropy_levels
+        cfg.SPARE.LEVELS = args.entropy_levels
     # Booleans / floats
-    cfg.ENTREM.USE_COLOR_ENTROPY = bool(args.use_color_entropy)
+    cfg.SPARE.USE_COLOR_ENTROPY = bool(args.use_color_entropy)
     if args.entropy_weight_power is not None:
-        cfg.ENTREM.ENTROPY_WEIGHT_POWER = args.entropy_weight_power
-    cfg.ENTREM.RANDOM_MASKING = bool(args.random_masking)
+        cfg.SPARE.ENTROPY_WEIGHT_POWER = args.entropy_weight_power
+    cfg.SPARE.RANDOM_MASKING = bool(args.random_masking)
     if args.num_squares is not None:
-        cfg.ENTREM.NUM_SQUARES = max(1, int(args.num_squares))
+        cfg.SPARE.NUM_SQUARES = max(1, int(args.num_squares))
     if args.mask_type is not None:
-        cfg.ENTREM.MASK_TYPE = str(args.mask_type).lower()
+        cfg.SPARE.MASK_TYPE = str(args.mask_type).lower()
     # Plotting options
     if args.plot_loss:
-        cfg.ENTREM.PLOT_LOSS = True
+        cfg.SPARE.PLOT_LOSS = True
     if args.plot_loss_path is not None:
-        cfg.ENTREM.PLOT_LOSS_PATH = args.plot_loss_path
+        cfg.SPARE.PLOT_LOSS_PATH = args.plot_loss_path
     if args.plot_ema_alpha is not None:
-        cfg.ENTREM.PLOT_EMA_ALPHA = args.plot_ema_alpha
+        cfg.SPARE.PLOT_EMA_ALPHA = args.plot_ema_alpha
     # Disable flags
     if args.disable_mcl:
-        cfg.ENTREM.DISABLE_MCL = True
+        cfg.SPARE.DISABLE_MCL = True
     if args.disable_erl:
-        cfg.ENTREM.DISABLE_ERL = True
+        cfg.SPARE.DISABLE_ERL = True
     # MCL temperature
     if args.mcl_temperature is not None:
-        cfg.ENTREM.MCL_TEMPERATURE = args.mcl_temperature
+        cfg.SPARE.MCL_TEMPERATURE = args.mcl_temperature
     if args.mcl_temperature_apply is not None:
-        cfg.ENTREM.MCL_TEMPERATURE_APPLY = args.mcl_temperature_apply.lower()
+        cfg.SPARE.MCL_TEMPERATURE_APPLY = args.mcl_temperature_apply.lower()
     # ERL activation
     if args.erl_activation is not None:
-        cfg.ENTREM.ERL_ACTIVATION = args.erl_activation.lower()
+        cfg.SPARE.ERL_ACTIVATION = args.erl_activation.lower()
     if args.erl_leaky_relu_slope is not None:
-        cfg.ENTREM.ERL_LEAKY_RELU_SLOPE = args.erl_leaky_relu_slope
+        cfg.SPARE.ERL_LEAKY_RELU_SLOPE = args.erl_leaky_relu_slope
     if args.erl_softplus_beta is not None:
-        cfg.ENTREM.ERL_SOFTPLUS_BETA = args.erl_softplus_beta
+        cfg.SPARE.ERL_SOFTPLUS_BETA = args.erl_softplus_beta
     # Pruning options
     if args.prune_enable:
-        cfg.ENTREM.PRUNE_ENABLE = True
+        cfg.SPARE.PRUNE_ENABLE = True
     if args.prune_tau_low is not None:
-        cfg.ENTREM.PRUNE_TAU_LOW = args.prune_tau_low
+        cfg.SPARE.PRUNE_TAU_LOW = args.prune_tau_low
     if args.prune_tau_high is not None:
-        cfg.ENTREM.PRUNE_TAU_HIGH = args.prune_tau_high
+        cfg.SPARE.PRUNE_TAU_HIGH = args.prune_tau_high
     if args.prune_mean_low is not None:
-        cfg.ENTREM.PRUNE_MEAN_LOW = args.prune_mean_low
+        cfg.SPARE.PRUNE_MEAN_LOW = args.prune_mean_low
     if args.prune_mean_high is not None:
-        cfg.ENTREM.PRUNE_MEAN_HIGH = args.prune_mean_high
+        cfg.SPARE.PRUNE_MEAN_HIGH = args.prune_mean_high
     if args.prune_skip_prediction:
-        cfg.ENTREM.PRUNE_SKIP_PREDICTION = True
+        cfg.SPARE.PRUNE_SKIP_PREDICTION = True
     if args.prune_random_range is not None:
         # store as list [A, B]
-        cfg.ENTREM.PRUNE_RANDOM_RANGE = list(args.prune_random_range)
+        cfg.SPARE.PRUNE_RANDOM_RANGE = list(args.prune_random_range)
 
     # Populate PHASEMIX from CLI if provided
     if args.phase_mix_alpha is not None:

@@ -307,9 +307,9 @@ def main():
     parser = argparse.ArgumentParser(description='Frequency-masked trend on CIFAR-10-C for source model (no adaptation).')
     parser.add_argument('--data_dir', type=str, required=True,
                         help='Path to CIFAR-10-C data directory')
-    parser.add_argument('--ckpt_dir', type=str, default='/users/doloriel/work/Repo/FreqREM/ckpt',
+    parser.add_argument('--ckpt_dir', type=str, default='/users/doloriel/work/Repo/SPARE/ckpt',
                         help='Checkpoint directory (used by robustbench.load_model)')
-    parser.add_argument('--checkpoint', type=str, default='/users/doloriel/work/Repo/FreqREM/ckpt/vit_base_384_cifar10.t7',
+    parser.add_argument('--checkpoint', type=str, default='/users/doloriel/work/Repo/SPARE/ckpt/vit_base_384_cifar10.t7',
                         help='Path to ViT-Base 384 checkpoint for CIFAR-10')
     parser.add_argument('--batch_size', type=int, default=50)
     parser.add_argument('--num_examples', type=int, default=10000,

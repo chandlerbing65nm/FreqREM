@@ -40,8 +40,8 @@ OPTIM:
   M_PROGRESS_ENABLE: false
   M_PROGRESS_DIR: up  # 'up' increases m toward M_TOP; 'down' decreases toward M_TOP
 
-# EntREM defaults (can be overridden by CLI args)
-ENTREM:
+# SPARE defaults (can be overridden by CLI args)
+SPARE:
   PATCH_SIZE: 8
   NUM_BINS: 32
   LEVELS: [0, 10, 20] # not used at the moment, it's a redundancy of M and N above
@@ -53,7 +53,7 @@ ENTREM:
   MASK_TYPE: binary
   # Plotting losses
   PLOT_LOSS: false
-  PLOT_LOSS_PATH: /users/doloriel/work/Repo/FreqREM/cifar/plots/EntREM/Loss/losses.png
+  PLOT_LOSS_PATH: /users/doloriel/work/Repo/SPARE/cifar/plots/SPARE/Loss/losses.png
   PLOT_EMA_ALPHA: 0.98
   # MCL and ERL activation
   MCL_TEMPERATURE: 1.0

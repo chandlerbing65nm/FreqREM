@@ -390,7 +390,7 @@ def build_random_square_mask(H: int,
 
     return mask
 
-class EntREM(nn.Module):
+class SPARE(nn.Module):
     """
     Entropy-based REM variant: instead of masking tokens via attention, we compute a patchwise
     entropy map on the input image and build binary masks on the input.
@@ -449,7 +449,7 @@ class EntREM(nn.Module):
         self.model = model
         self.optimizer = optimizer
         self.steps = steps
-        assert steps > 0, "EntREM requires >= 1 step(s) to forward and update"
+        assert steps > 0, "SPARE requires >= 1 step(s) to forward and update"
         self.episodic = episodic
 
         self.model_state, self.optimizer_state = copy_model_and_optimizer(self.model, self.optimizer)

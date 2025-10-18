@@ -1,12 +1,12 @@
 # SPARE: Selective Pruning And Random Erasing
 
-This repository contains code for SPARE (Selective Pruning And Random Erasing), built on top of the EntREM variant in `cifar/entrem.py` and evaluation scripts for CIFAR-C.
+This repository contains code for SPARE (Selective Pruning And Random Erasing), built on top of the SPARE variant in `cifar/spare.py` and evaluation scripts for CIFAR-C.
 
 The CIFAR runners are:
-- `cifar/cifar10c_vit_entrem.py`
-- `cifar/cifar100c_vit_entrem.py`
+- `cifar/cifar10c_vit_spare.py`
+- `cifar/cifar100c_vit_spare.py`
 
-These wrap a base ViT checkpoint with the EntREM adaptation (`REM` in configs) and add selective pruning and random erasing controls via the `ENTREM` config options in `cifar/conf.py` and the YAML files under `cifar/cfgs/`.
+These wrap a base ViT checkpoint with the SPARE adaptation (`REM` in configs) and add selective pruning and random erasing controls via the `SPARE` config options in `cifar/conf.py` and the YAML files under `cifar/cfgs/`.
 
 ## Installation
 
@@ -21,7 +21,7 @@ Download the CIFAR-C datasets and note the directory you place them in (pass as 
 - CIFAR-10-C: https://zenodo.org/records/2535967
 - CIFAR-100-C: https://zenodo.org/records/3555552
 
-RobustBench loaders in `cifar/cifar10c_vit_entrem.py` and `cifar/cifar100c_vit_entrem.py` will read from `--data_dir`.
+RobustBench loaders in `cifar/cifar10c_vit_spare.py` and `cifar/cifar100c_vit_spare.py` will read from `--data_dir`.
 
 ## CIFAR Experiments
 
@@ -35,15 +35,15 @@ conda activate rem
 cd home/cifar
 ```
 
-If you are inside the repository root, the `cifar/` folder is at `Repo/FreqREM/cifar/`.
+If you are inside the repository root, the `cifar/` folder is at `Repo/SPARE/cifar/`.
 
 ### CIFAR-10 → CIFAR-10-C
 
 Run the following from inside the `cifar/` directory (so that paths like `cfgs/...` resolve):
 
 ```bash
-python -m cifar10c_vit_entrem \
-     --cfg cfgs/cifar10/entrem.yaml \
+python -m cifar10c_vit_spare \
+     --cfg cfgs/cifar10/spare.yaml \
      --data_dir data_path \
      --patch_size 8 \
      --lr 0.001 \
@@ -59,8 +59,8 @@ python -m cifar10c_vit_entrem \
 ### CIFAR-100 → CIFAR-100-C
 
 ```bash
-python -m cifar100c_vit_entrem \
-     --cfg cfgs/cifar100/entrem.yaml \
+python -m cifar100c_vit_spare \
+     --cfg cfgs/cifar100/spare.yaml \
      --data_dir data_path \
      --patch_size 8 \
      --lr 0.0001 \
@@ -76,13 +76,13 @@ python -m cifar100c_vit_entrem \
 ### Notes
 
 - Checkpoints:
-  - CIFAR-10: `cifar/cifar10c_vit_entrem.py` loads a ViT checkpoint from `/users/doloriel/work/Repo/FreqREM/ckpt/vit_base_384_cifar10.t7`.
-  - CIFAR-100: `cifar/cifar100c_vit_entrem.py` loads a checkpoint from `/users/doloriel/work/Repo/FreqREM/ckpt/pretrain_cifar100.t7`.
+  - CIFAR-10: `cifar/cifar10c_vit_spare.py` loads a ViT checkpoint from `/users/doloriel/work/Repo/SPARE/ckpt/vit_base_384_cifar10.t7`.
+  - CIFAR-100: `cifar/cifar100c_vit_spare.py` loads a checkpoint from `/users/doloriel/work/Repo/SPARE/ckpt/pretrain_cifar100.t7`.
   - If your checkpoints are elsewhere, update those paths in the scripts or place the files accordingly.
 - Input size and patch size:
-  - The default input resize is `--size 384` (see `cifar/conf.py`). If using EntREM masking, the input size must be divisible by `--patch_size` (e.g., 384 divisible by 8).
+  - The default input resize is `--size 384` (see `cifar/conf.py`). If using SPARE masking, the input size must be divisible by `--patch_size` (e.g., 384 divisible by 8).
 - Config knobs:
-  - YAMLs under `cifar/cfgs/cifar10/entrem.yaml` and `cifar/cfgs/cifar100/entrem.yaml` set defaults for learning rate, masking schedule (`m`, `n`), and EntREM options. CLI flags override the YAML.
+  - YAMLs under `cifar/cfgs/cifar10/spare.yaml` and `cifar/cfgs/cifar100/spare.yaml` set defaults for learning rate, masking schedule (`m`, `n`), and SPARE options. CLI flags override the YAML.
 
 ## ImageNet Experiments
 
