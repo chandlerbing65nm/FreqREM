@@ -1,4 +1,4 @@
-# SPARE: Selective Pruning And Random Erasing
+# SPARE: Sample Pruning And Random Erasing for Continual Test-Time Adaptation
 
 This repository contains code for SPARE (Selective Pruning And Random Erasing), built on top of the SPARE variant in `cifar/spare.py` and evaluation scripts for CIFAR-C.
 
