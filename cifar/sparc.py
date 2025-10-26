@@ -117,7 +117,7 @@ def _wrap_layernorms_with_taln(module: nn.Module,
 
 
 def configure_model(model: nn.Module) -> nn.Module:
-    """Enable grads where needed and keep BatchNorm in special mode as in REM.
+    """Enable grads where needed for SPARC CTTA and keep BatchNorm in special mode (as in REM).
 
     All TALN-related wrapping has been removed.
     """
@@ -421,14 +421,13 @@ def build_random_square_mask(H: int,
 
 class SPARC(nn.Module):
     """
-    Entropy-based REM variant: instead of masking tokens via attention, we compute a patchwise
-    entropy map on the input image and build binary masks on the input.
+    SPARC: Stochastic Patch Erasing with Adaptive Residual Correction for Continual Test-Time Adaptation.
 
     Masking modes:
     - Random mode (random_masking=True): place `num_squares` equal-size, grid-aligned square masks
       at random positions so that the union covers ~m% of the image area.
 
-    We then compute the REM losses across masking levels and update the model.
+    We then compute the REM losses across masking levels and update the model online during CTTA.
     """
     def __init__(self, model: nn.Module, optimizer: torch.optim.Optimizer,
                  steps: int = 1, episodic: bool = False,
@@ -730,7 +729,7 @@ class SPARC(nn.Module):
 
     def forward_and_adapt(self, x: torch.Tensor, optimizer: torch.optim.Optimizer,
                           **kwargs) -> torch.Tensor:
-        """Forward pass with multiple masked views and adaptation update."""
+        """Forward pass for SPARC (CTTA) with multiple masked views and adaptation update."""
         # If in eval-only probe mode, bypass masking/adaptation and return base logits
         if getattr(self, "_eval_only", False):
             self.model.eval()

@@ -3,7 +3,8 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""Configuration file (powered by YACS)."""
+"""Configuration file (powered by YACS) for SPARC: Stochastic Patch Erasing with
+Adaptive Residual Correction for Continual Test-Time Adaptation (CTTA), and related baselines."""
 
 import argparse
 import os
@@ -169,7 +170,8 @@ _C.PHASE.CWAL_THRESHOLD = 0.7
 
 # (Removed phase-mix-then-mask config)
 
-# Entropy-based REM (SPARC) options
+# SPARC: Stochastic Patch Erasing with Adaptive Residual Correction for
+# Continual Test-Time Adaptation (CTTA) options
 _C.SPARC = CfgNode()
 _C.SPARC.PATCH_SIZE = 16
 _C.SPARC.RANDOM_MASKING = False
@@ -261,7 +263,7 @@ def load_cfg_fom_args(description="Config options."):
     parser.add_argument("--hog_ratio", type=float,
                     help="hog ratio")
 
-    # REM/SPARC optimization CLI options
+    # SPARC (CTTA) optimization CLI options
     parser.add_argument("--steps", type=int, default=None,
                         help="Number of adaptation updates per batch (maps to OPTIM.STEPS)")
     parser.add_argument("--m", type=float, default=None,

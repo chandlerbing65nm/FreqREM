@@ -31,6 +31,12 @@ def rm_substr_from_state_dict(state_dict, substr):
 
 
 def evaluate(description):
+    """Evaluate SPARC: Stochastic Patch Erasing with Adaptive Residual Correction
+    for Continual Test-Time Adaptation (CTTA) on CIFAR-100-C.
+
+    Iterates over corruptions/severities and logs accuracy, NLL, ECE,
+    and adaptation-time metrics relevant for CTTA.
+    """
     args = load_cfg_fom_args(description)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     # configure model
@@ -154,7 +160,7 @@ def compute_metrics(model: nn.Module,
                     y: torch.Tensor,
                     batch_size: int = 100,
                     device: torch.device = None):
-    """Compute ACC, NLL, ECE and accumulate adaptation timing/MACs."""
+    """Compute ACC, NLL, ECE and accumulate adaptation timing/MACs during SPARC CTTA."""
     if device is None:
         device = x.device
     if isinstance(device, str):
@@ -334,4 +340,4 @@ def setup_sparc(model):
 
 
 if __name__ == '__main__':
-    evaluate('CIFAR-100-C evaluation with SPARC (entropy-masked REM).')
+    evaluate('CIFAR-100-C evaluation with SPARC: Stochastic Patch Erasing with Adaptive Residual Correction for Continual Test-Time Adaptation.')
