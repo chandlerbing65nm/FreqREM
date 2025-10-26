@@ -6,8 +6,6 @@ The CIFAR runners are:
 - `cifar/cifar10c_vit_sparc.py`
 - `cifar/cifar100c_vit_sparc.py`
 
-These wrap a base ViT checkpoint with the SPARC adaptation (`REM` in configs) and support random erasing.
-
 ## Installation
 
 See INSTALL.md for detailed environment setup:
@@ -32,10 +30,10 @@ Below is a minimal setup and the exact commands to reproduce SPARC on CIFAR-10-C
 ```bash
 conda init
 conda activate rem
-cd home/cifar
+cd SPARC
 ```
 
-If you are inside the repository root, the `cifar/` folder is at `Repo/SPARC/cifar/`.
+If you are inside the repository root, the `cifar/` folder is at `SPARC/cifar/`.
 
 ### CIFAR-10 → CIFAR-10-C
 
@@ -52,7 +50,9 @@ python -m cifar10c_vit_sparc \
      --random_masking \
      --num_squares 1 \
      --mask_type binary \
-     --m 0.10 --n 3
+     --m 0.10 --n 3 \
+     --logsparc_enable beta \
+     --logsparc_lr_mult 5.0 \
 ```
 
 ### CIFAR-100 → CIFAR-100-C
@@ -68,7 +68,9 @@ python -m cifar100c_vit_sparc \
      --random_masking \
      --num_squares 1 \
      --mask_type binary \
-     --m 0.10 --n 3
+     --m 0.10 --n 3 \
+     --logsparc_enable beta \
+     --logsparc_lr_mult 5.0 \
 ```
 
 ### Notes
