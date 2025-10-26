@@ -1,4 +1,4 @@
-# SPARC: Stochastic Patch Erasing with Adaptive Residual Correction for Continual Test-Time Learning
+# SPARC: Stochastic Patch Erasing with Adaptive Residual Correction for Continual Test-Time Adaptation
 
 This repository contains code for SPARC (Stochastic Patch Erasing with Adaptive Residual Correction).
   
