@@ -152,16 +152,6 @@ _C.OPTIM.ViDALR=1e-4
 # REM parameters
 _C.OPTIM.M = 0.1
 _C.OPTIM.N = 3
-_C.OPTIM.M_STEP = 0.0
-_C.OPTIM.M_TOP = 0.5
-_C.OPTIM.M_PROGRESS_ENABLE = False
-_C.OPTIM.M_PROGRESS_DIR = 'up'  # choices: 'up','down'
-_C.OPTIM.M_ADAPTIVE_ENABLE = False
-_C.OPTIM.M_GAP_TARGET = 0.2
-_C.OPTIM.M_GAP_KP = 0.05
-_C.OPTIM.M_MIN = 0.0
-_C.OPTIM.M_MAX = 0.8
-_C.OPTIM.M_ADAPT_SMOOTH = 0.9
 _C.OPTIM.LAMB = 1.0
 _C.OPTIM.MARGIN = 0.0
 
@@ -177,37 +167,33 @@ _C.PHASE.USE_ERL = True
 _C.PHASE.CONSISTENCY_MODE = 'mcl'
 _C.PHASE.CWAL_THRESHOLD = 0.7
 
-# Phase-mix-then-mask options
-_C.PHASEMIX = CfgNode()
-_C.PHASEMIX.ALPHA = 1.0
+# (Removed phase-mix-then-mask config)
 
-# Entropy-based REM (SPARE) options
-_C.SPARE = CfgNode()
-_C.SPARE.PATCH_SIZE = 16
-_C.SPARE.NUM_BINS = 32
-_C.SPARE.LEVELS = [0, 10, 20]
-_C.SPARE.USE_COLOR_ENTROPY = False
-_C.SPARE.ENTROPY_WEIGHT_POWER = 2.0
-_C.SPARE.RANDOM_MASKING = False
-_C.SPARE.NUM_SQUARES = 1
-_C.SPARE.MASK_TYPE = 'binary'  # choices: 'binary', 'gaussian', 'mean'
-_C.SPARE.PLOT_LOSS = False
-_C.SPARE.PLOT_LOSS_PATH = ""
-_C.SPARE.PLOT_EMA_ALPHA = 0.98
-_C.SPARE.MCL_TEMPERATURE = 1.0
-_C.SPARE.MCL_TEMPERATURE_APPLY = 'both'  # choices: 'teacher', 'student', 'both'
-_C.SPARE.ERL_ACTIVATION = 'relu'         # choices: 'relu','leaky_relu','softplus','gelu','sigmoid','identity'
-_C.SPARE.ERL_LEAKY_RELU_SLOPE = 0.01
-_C.SPARE.ERL_SOFTPLUS_BETA = 1.0
-_C.SPARE.DISABLE_MCL = False
-_C.SPARE.DISABLE_ERL = False
-_C.SPARE.PRUNE_ENABLE = False
-_C.SPARE.PRUNE_TAU_LOW = 0.05
-_C.SPARE.PRUNE_TAU_HIGH = 0.20
-_C.SPARE.PRUNE_MEAN_LOW = 0.05
-_C.SPARE.PRUNE_MEAN_HIGH = 0.40
-_C.SPARE.PRUNE_SKIP_PREDICTION = False
-_C.SPARE.PRUNE_RANDOM_RANGE = None
+# Entropy-based REM (SPARC) options
+_C.SPARC = CfgNode()
+_C.SPARC.PATCH_SIZE = 16
+_C.SPARC.RANDOM_MASKING = False
+_C.SPARC.NUM_SQUARES = 1
+_C.SPARC.MASK_TYPE = 'binary'  # choices: 'binary', 'gaussian', 'mean'
+_C.SPARC.PLOT_LOSS = False
+_C.SPARC.PLOT_LOSS_PATH = ""
+_C.SPARC.PLOT_EMA_ALPHA = 0.98
+_C.SPARC.MCL_TEMPERATURE = 1.0
+_C.SPARC.MCL_TEMPERATURE_APPLY = 'both'  # choices: 'teacher', 'student', 'both'
+_C.SPARC.MCL_DISTANCE = 'ce'             # choices: 'ce','kl','js','mse','mae'
+_C.SPARC.ERL_ACTIVATION = 'relu'         # choices: 'relu','leaky_relu','softplus','gelu','sigmoid','identity'
+_C.SPARC.ERL_LEAKY_RELU_SLOPE = 0.01
+_C.SPARC.ERL_SOFTPLUS_BETA = 1.0
+_C.SPARC.DISABLE_MCL = False
+_C.SPARC.DISABLE_ERL = False
+# MARN (Manifold-Aware Ranked Normalization)
+# (TALN options removed)
+_C.SPARC.LOGSPARC_ENABLE = 'none'           # choices: 'none','gamma','beta','gammabeta'
+_C.SPARC.LOGSPARC_LR_MULT = 1.0             # LR multiplier for Logsparc parameters
+_C.SPARC.LOGSPARC_REG = 0.0                 # regularizer strength for monotonic gamma/beta
+_C.SPARC.LOGSPARC_TEMP = 0.0                # if >0, apply as temperature to beta pre-softplus; masked views only
+_C.SPARC.LOGSPARC_TYPE2 = False             # if true and LOGSPARC_ENABLE!=none: gamma/beta are [B,C]
+_C.SPARC.LOGSPARC_TYPE3 = False             # if true and LOGSPARC_ENABLE!=none: gamma/beta are [1,C]
 
 # # Config destination (in SAVE_DIR)
 # _C.CFG_DEST = "cfg.yaml"
@@ -275,7 +261,7 @@ def load_cfg_fom_args(description="Config options."):
     parser.add_argument("--hog_ratio", type=float,
                     help="hog ratio")
 
-    # REM/SPARE optimization CLI options
+    # REM/SPARC optimization CLI options
     parser.add_argument("--steps", type=int, default=None,
                         help="Number of adaptation updates per batch (maps to OPTIM.STEPS)")
     parser.add_argument("--m", type=float, default=None,
@@ -284,67 +270,24 @@ def load_cfg_fom_args(description="Config options."):
                         help="Number of masking levels (maps to OPTIM.N)")
     parser.add_argument("--lr", type=float, default=None,
                         help="Learning rate for optimizer (maps to OPTIM.LR)")
-    # Progressive masking curriculum
-    parser.add_argument("--m_step", type=float, default=None,
-                        help="Progressive step to add/subtract to masking increment m each batch (maps to OPTIM.M_STEP)")
-    parser.add_argument("--m_top", type=float, default=None,
-                        help="Upper (when up) or lower (when down) bound for progressive m (maps to OPTIM.M_TOP)")
-    parser.add_argument("--m_progress_enable", action="store_true",
-                        help="Enable progressive masking: update m by m_step toward m_top each batch")
-    parser.add_argument("--m_progress_dir", type=str, default=None, choices=['up','down'],
-                        help="Direction for progressive masking: 'up' increases m toward m_top, 'down' decreases m toward m_top")
-    parser.add_argument("--m_adaptive_enable", action="store_true",
-                        help="Enable adaptive m schedule driven by entropy-gap feedback")
-    parser.add_argument("--m_gap_target", type=float, default=None,
-                        help="Target entropy gap between masking views for adaptive m schedule")
-    parser.add_argument("--m_gap_kp", type=float, default=None,
-                        help="Proportional gain for adaptive m update (delta m = kp * (target - gap))")
-    parser.add_argument("--m_min", type=float, default=None,
-                        help="Lower bound for m when adapting/progressing")
-    parser.add_argument("--m_max", type=float, default=None,
-                        help="Upper bound for m when adapting/progressing")
-    parser.add_argument("--m_adapt_smooth", type=float, default=None,
-                        help="EMA smoothing (alpha in [0,1]) for entropy-gap signal in adaptive schedule")
+    # (Removed progressive/adaptive masking CLI args)
     parser.add_argument("--lamb", type=float, default=None,
                         help="Lambda for entropy-ordering loss (maps to OPTIM.LAMB)")
     parser.add_argument("--margin", type=float, default=None,
                         help="Margin multiplier in entropy-ordering loss (maps to OPTIM.MARGIN)")
 
-    # SPARE-specific CLI options
+    # SPARC-specific CLI options
     parser.add_argument("--patch_size", type=int, default=None,
                         help="Patch size for entropy-based masking (default from cfg)")
-    parser.add_argument("--num_bins", type=int, default=None,
-                        help="Histogram bins for entropy computation (default from cfg)")
-    parser.add_argument("--entropy_bins", type=int, default=None,
-                        help="Alias for --num_bins: histogram bins for entropy computation")
-    parser.add_argument("--entropy_levels", type=int, nargs='+', default=None,
-                        help="Masking levels in percent for entropy-based masking, e.g., 0 10 20")
-    parser.add_argument("--use_color_entropy", action="store_true",
-                        help="Compute entropy over RGB channels (averaged) instead of grayscale")
-    parser.add_argument("--entropy_weight_power", type=float, default=None,
-                        help="Power for weighting top entropies when computing centroid (>1 emphasizes higher entropies)")
+    # (Removed: --num_bins, --entropy_bins, --entropy_levels, --use_color_entropy, --entropy_weight_power)
     parser.add_argument("--random_masking", action="store_true",
                         help="Use random grid-aligned square placement instead of entropy centroid")
     parser.add_argument("--num_squares", type=int, default=None,
                         help="Number of equal-size squares to place per masking level (default from cfg)")
     parser.add_argument("--mask_type", type=str, default=None, choices=['binary', 'gaussian', 'mean'],
                         help="How to fill masked regions: 'binary' (zero), 'gaussian' (blurred), or 'mean' (per-image mean)")
-    # SPARE pruning CLI options
-    parser.add_argument("--prune_enable", action="store_true",
-                        help="Enable pruning via mask-induced entropy differential")
-    parser.add_argument("--prune_tau_low", type=float, default=None,
-                        help="Lower bound of std band for entropy differential")
-    parser.add_argument("--prune_tau_high", type=float, default=None,
-                        help="Upper bound of std band for entropy differential")
-    parser.add_argument("--prune_mean_low", type=float, default=None,
-                        help="Lower bound of mean band for entropy differential")
-    parser.add_argument("--prune_mean_high", type=float, default=None,
-                        help="Upper bound of mean band for entropy differential")
-    parser.add_argument("--prune_skip_prediction", action="store_true",
-                        help="If set, pruned samples are excluded from prediction outputs and accuracy")
-    parser.add_argument("--prune_random_range", type=int, nargs=2, default=None,
-                        help="If set together with --prune_enable, randomly prune between A and B samples per corruption (absolute counts)")
-    # SPARE plotting CLI options
+    # (Removed SPARC pruning CLI options)
+    # SPARC plotting CLI options
     parser.add_argument("--plot_loss", action="store_true",
                         help="If set, save a PNG plot of EMA of MCL and ERL across steps")
     parser.add_argument("--plot_loss_path", type=str, default=None,
@@ -361,6 +304,9 @@ def load_cfg_fom_args(description="Config options."):
                         help="Temperature for MCL softmax/log_softmax (default from cfg)")
     parser.add_argument("--mcl_temperature_apply", type=str, default=None, choices=['teacher','student','both'],
                         help="Where to apply MCL temperature: teacher, student, or both")
+    parser.add_argument("--mcl_distance", type=str, default=None,
+                        choices=['ce','kl','js','mse','mae'],
+                        help="Distance metric for MCL: ce|kl|js|mse|mae (default: ce)")
     # ERL activation options
     parser.add_argument("--erl_activation", type=str, default=None,
                         choices=['relu','leaky_relu','softplus','gelu','sigmoid','identity'],
@@ -369,9 +315,22 @@ def load_cfg_fom_args(description="Config options."):
                         help="Negative slope for LeakyReLU when erl_activation=leaky_relu")
     parser.add_argument("--erl_softplus_beta", type=float, default=None,
                         help="Beta parameter for Softplus when erl_activation=softplus")
-    # Phase-mix-then-mask CLI options
-    parser.add_argument("--phase_mix_alpha", type=float, default=None,
-                        help="Alpha in [0,1] for phase mix (1.0=magnitude-only counterpart)")
+    # Logsparc CLI options
+    parser.add_argument("--logsparc_enable", type=str, default=None,
+                        choices=['none','gamma','beta','gammabeta'],
+                        help="Enable Logsparc on logits with mode: none|gamma|beta|gammabeta")
+    parser.add_argument("--logsparc_lr_mult", type=float, default=None,
+                        help="Learning rate multiplier for Logsparc parameters (default from cfg)")
+    parser.add_argument("--logsparc_reg", type=float, default=None,
+                        help="Monotonicity regularizer strength for gamma/beta across masking levels")
+    parser.add_argument("--logsparc_temp", type=float, default=None,
+                        help="If > 0, apply as temperature to beta pre-softplus; only when mask ratio > 0")
+    parser.add_argument("--logsparc_type2", action="store_true",
+                        help="If set with --logsparc_enable, use per-class gamma/beta of shape [B,C]")
+    parser.add_argument("--logsparc_type3", action="store_true",
+                        help="If set with --logsparc_enable, use global per-class gamma/beta of shape [1,C]")
+    # (TALN CLI options removed)
+    # (Removed Phase-mix-then-mask CLI arg)
 
     if len(sys.argv) == 1:
         parser.print_help()
@@ -398,26 +357,7 @@ def load_cfg_fom_args(description="Config options."):
         cfg.OPTIM.N = args.n
     if args.lr is not None:
         cfg.OPTIM.LR = args.lr
-    if args.m_step is not None:
-        cfg.OPTIM.M_STEP = args.m_step
-    if args.m_top is not None:
-        cfg.OPTIM.M_TOP = args.m_top
-    if args.m_progress_enable:
-        cfg.OPTIM.M_PROGRESS_ENABLE = True
-    if args.m_progress_dir is not None:
-        cfg.OPTIM.M_PROGRESS_DIR = args.m_progress_dir
-    if args.m_adaptive_enable:
-        cfg.OPTIM.M_ADAPTIVE_ENABLE = True
-    if args.m_gap_target is not None:
-        cfg.OPTIM.M_GAP_TARGET = args.m_gap_target
-    if args.m_gap_kp is not None:
-        cfg.OPTIM.M_GAP_KP = args.m_gap_kp
-    if args.m_min is not None:
-        cfg.OPTIM.M_MIN = args.m_min
-    if args.m_max is not None:
-        cfg.OPTIM.M_MAX = args.m_max
-    if args.m_adapt_smooth is not None:
-        cfg.OPTIM.M_ADAPT_SMOOTH = args.m_adapt_smooth
+    # (Removed progressive/adaptive OPTIM overrides from CLI)
     if args.lamb is not None:
         cfg.OPTIM.LAMB = args.lamb
     if args.margin is not None:
@@ -426,68 +366,60 @@ def load_cfg_fom_args(description="Config options."):
     cfg.use_hog = args.use_hog
     cfg.hog_ratio = args.hog_ratio
 
-    # Populate SPARE config from CLI if provided
+    # Populate SPARC config from CLI if provided
     if args.patch_size is not None:
-        cfg.SPARE.PATCH_SIZE = args.patch_size
-    if args.num_bins is not None:
-        cfg.SPARE.NUM_BINS = args.num_bins
-    if args.entropy_bins is not None:
-        cfg.SPARE.NUM_BINS = args.entropy_bins
-    if args.entropy_levels is not None:
-        cfg.SPARE.LEVELS = args.entropy_levels
-    # Booleans / floats
-    cfg.SPARE.USE_COLOR_ENTROPY = bool(args.use_color_entropy)
-    if args.entropy_weight_power is not None:
-        cfg.SPARE.ENTROPY_WEIGHT_POWER = args.entropy_weight_power
-    cfg.SPARE.RANDOM_MASKING = bool(args.random_masking)
+        cfg.SPARC.PATCH_SIZE = args.patch_size
+    # (Removed: num_bins/entropy_bins/entropy_levels/use_color_entropy/entropy_weight_power)
+    cfg.SPARC.RANDOM_MASKING = bool(args.random_masking)
     if args.num_squares is not None:
-        cfg.SPARE.NUM_SQUARES = max(1, int(args.num_squares))
+        cfg.SPARC.NUM_SQUARES = max(1, int(args.num_squares))
     if args.mask_type is not None:
-        cfg.SPARE.MASK_TYPE = str(args.mask_type).lower()
+        cfg.SPARC.MASK_TYPE = str(args.mask_type).lower()
     # Plotting options
     if args.plot_loss:
-        cfg.SPARE.PLOT_LOSS = True
+        cfg.SPARC.PLOT_LOSS = True
     if args.plot_loss_path is not None:
-        cfg.SPARE.PLOT_LOSS_PATH = args.plot_loss_path
+        cfg.SPARC.PLOT_LOSS_PATH = args.plot_loss_path
     if args.plot_ema_alpha is not None:
-        cfg.SPARE.PLOT_EMA_ALPHA = args.plot_ema_alpha
+        cfg.SPARC.PLOT_EMA_ALPHA = args.plot_ema_alpha
     # Disable flags
     if args.disable_mcl:
-        cfg.SPARE.DISABLE_MCL = True
+        cfg.SPARC.DISABLE_MCL = True
     if args.disable_erl:
-        cfg.SPARE.DISABLE_ERL = True
+        cfg.SPARC.DISABLE_ERL = True
     # MCL temperature
     if args.mcl_temperature is not None:
-        cfg.SPARE.MCL_TEMPERATURE = args.mcl_temperature
+        cfg.SPARC.MCL_TEMPERATURE = args.mcl_temperature
     if args.mcl_temperature_apply is not None:
-        cfg.SPARE.MCL_TEMPERATURE_APPLY = args.mcl_temperature_apply.lower()
+        cfg.SPARC.MCL_TEMPERATURE_APPLY = args.mcl_temperature_apply.lower()
+    if args.mcl_distance is not None:
+        cfg.SPARC.MCL_DISTANCE = args.mcl_distance.lower()
     # ERL activation
     if args.erl_activation is not None:
-        cfg.SPARE.ERL_ACTIVATION = args.erl_activation.lower()
+        cfg.SPARC.ERL_ACTIVATION = args.erl_activation.lower()
     if args.erl_leaky_relu_slope is not None:
-        cfg.SPARE.ERL_LEAKY_RELU_SLOPE = args.erl_leaky_relu_slope
+        cfg.SPARC.ERL_LEAKY_RELU_SLOPE = args.erl_leaky_relu_slope
     if args.erl_softplus_beta is not None:
-        cfg.SPARE.ERL_SOFTPLUS_BETA = args.erl_softplus_beta
-    # Pruning options
-    if args.prune_enable:
-        cfg.SPARE.PRUNE_ENABLE = True
-    if args.prune_tau_low is not None:
-        cfg.SPARE.PRUNE_TAU_LOW = args.prune_tau_low
-    if args.prune_tau_high is not None:
-        cfg.SPARE.PRUNE_TAU_HIGH = args.prune_tau_high
-    if args.prune_mean_low is not None:
-        cfg.SPARE.PRUNE_MEAN_LOW = args.prune_mean_low
-    if args.prune_mean_high is not None:
-        cfg.SPARE.PRUNE_MEAN_HIGH = args.prune_mean_high
-    if args.prune_skip_prediction:
-        cfg.SPARE.PRUNE_SKIP_PREDICTION = True
-    if args.prune_random_range is not None:
-        # store as list [A, B]
-        cfg.SPARE.PRUNE_RANDOM_RANGE = list(args.prune_random_range)
+        cfg.SPARC.ERL_SOFTPLUS_BETA = args.erl_softplus_beta
+    # (TALN options removed)
+    # Logsparc options
+    if args.logsparc_enable is not None:
+        cfg.SPARC.LOGSPARC_ENABLE = args.logsparc_enable.lower()
+    if args.logsparc_lr_mult is not None:
+        cfg.SPARC.LOGSPARC_LR_MULT = float(args.logsparc_lr_mult)
+    if args.logsparc_reg is not None:
+        cfg.SPARC.LOGSPARC_REG = float(args.logsparc_reg)
+    if args.logsparc_temp is not None:
+        cfg.SPARC.LOGSPARC_TEMP = float(args.logsparc_temp)
+    if args.logsparc_type2:
+        cfg.SPARC.LOGSPARC_TYPE2 = True
+    if args.logsparc_type3:
+        cfg.SPARC.LOGSPARC_TYPE3 = True
+    # (Feature polynomial toggles removed)
+    # (Removed LN sub-option gating as stats/affine/EMA are removed)
+    # (Removed SPARC pruning CLI mappings)
 
-    # Populate PHASEMIX from CLI if provided
-    if args.phase_mix_alpha is not None:
-        cfg.PHASEMIX.ALPHA = args.phase_mix_alpha
+    # (Removed PHASEMIX override from CLI)
 
 
     log_dest = os.path.basename(args.cfg_file)

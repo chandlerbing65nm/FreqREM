@@ -1,12 +1,12 @@
-# SPARE: Sample Pruning And Random Erasing for Continual Test-Time Adaptation
+# SPARC: Stochastic Patch Erasing with Adaptive Residual Correction for Continual Test-Time Learning
 
-This repository contains code for SPARE (Selective Pruning And Random Erasing), built on top of the SPARE variant in `cifar/spare.py` and evaluation scripts for CIFAR-C.
-
+This repository contains code for SPARC (Stochastic Patch Erasing with Adaptive Residual Correction).
+  
 The CIFAR runners are:
-- `cifar/cifar10c_vit_spare.py`
-- `cifar/cifar100c_vit_spare.py`
+- `cifar/cifar10c_vit_sparc.py`
+- `cifar/cifar100c_vit_sparc.py`
 
-These wrap a base ViT checkpoint with the SPARE adaptation (`REM` in configs) and add selective pruning and random erasing controls via the `SPARE` config options in `cifar/conf.py` and the YAML files under `cifar/cfgs/`.
+These wrap a base ViT checkpoint with the SPARC adaptation (`REM` in configs) and support random erasing.
 
 ## Installation
 
@@ -21,11 +21,11 @@ Download the CIFAR-C datasets and note the directory you place them in (pass as 
 - CIFAR-10-C: https://zenodo.org/records/2535967
 - CIFAR-100-C: https://zenodo.org/records/3555552
 
-RobustBench loaders in `cifar/cifar10c_vit_spare.py` and `cifar/cifar100c_vit_spare.py` will read from `--data_dir`.
+RobustBench loaders in `cifar/cifar10c_vit_sparc.py` and `cifar/cifar100c_vit_sparc.py` will read from `--data_dir`.
 
 ## CIFAR Experiments
 
-Below is a minimal setup and the exact commands to reproduce SPARE on CIFAR-10-C and CIFAR-100-C.
+Below is a minimal setup and the exact commands to reproduce SPARC on CIFAR-10-C and CIFAR-100-C.
 
 ### Environment setup
 
@@ -35,15 +35,15 @@ conda activate rem
 cd home/cifar
 ```
 
-If you are inside the repository root, the `cifar/` folder is at `Repo/SPARE/cifar/`.
+If you are inside the repository root, the `cifar/` folder is at `Repo/SPARC/cifar/`.
 
 ### CIFAR-10 → CIFAR-10-C
 
 Run the following from inside the `cifar/` directory (so that paths like `cfgs/...` resolve):
 
 ```bash
-python -m cifar10c_vit_spare \
-     --cfg cfgs/cifar10/spare.yaml \
+python -m cifar10c_vit_sparc \
+     --cfg cfgs/cifar10/sparc.yaml \
      --data_dir data_path \
      --patch_size 8 \
      --lr 0.001 \
@@ -52,15 +52,14 @@ python -m cifar10c_vit_spare \
      --random_masking \
      --num_squares 1 \
      --mask_type binary \
-     --m 0.10 --n 3 \
-     --prune_enable
+     --m 0.10 --n 3
 ```
 
 ### CIFAR-100 → CIFAR-100-C
 
 ```bash
-python -m cifar100c_vit_spare \
-     --cfg cfgs/cifar100/spare.yaml \
+python -m cifar100c_vit_sparc \
+     --cfg cfgs/cifar100/sparc.yaml \
      --data_dir data_path \
      --patch_size 8 \
      --lr 0.0001 \
@@ -69,20 +68,19 @@ python -m cifar100c_vit_spare \
      --random_masking \
      --num_squares 1 \
      --mask_type binary \
-     --m 0.10 --n 3 \
-     --prune_enable
+     --m 0.10 --n 3
 ```
 
 ### Notes
 
 - Checkpoints:
-  - CIFAR-10: `cifar/cifar10c_vit_spare.py` loads a ViT checkpoint from `/users/doloriel/work/Repo/SPARE/ckpt/vit_base_384_cifar10.t7`.
-  - CIFAR-100: `cifar/cifar100c_vit_spare.py` loads a checkpoint from `/users/doloriel/work/Repo/SPARE/ckpt/pretrain_cifar100.t7`.
+  - CIFAR-10: `cifar/cifar10c_vit_sparc.py` loads a ViT checkpoint from `/users/doloriel/work/Repo/SPARC/ckpt/vit_base_384_cifar10.t7`.
+  - CIFAR-100: `cifar/cifar100c_vit_sparc.py` loads a checkpoint from `/users/doloriel/work/Repo/SPARC/ckpt/pretrain_cifar100.t7`.
   - If your checkpoints are elsewhere, update those paths in the scripts or place the files accordingly.
 - Input size and patch size:
-  - The default input resize is `--size 384` (see `cifar/conf.py`). If using SPARE masking, the input size must be divisible by `--patch_size` (e.g., 384 divisible by 8).
+  - The default input resize is `--size 384` (see `cifar/conf.py`). If using SPARC masking, the input size must be divisible by `--patch_size` (e.g., 384 divisible by 8).
 - Config knobs:
-  - YAMLs under `cifar/cfgs/cifar10/spare.yaml` and `cifar/cfgs/cifar100/spare.yaml` set defaults for learning rate, masking schedule (`m`, `n`), and SPARE options. CLI flags override the YAML.
+  - YAMLs under `cifar/cfgs/cifar10/sparc.yaml` and `cifar/cfgs/cifar100/sparc.yaml` set defaults for learning rate, masking schedule (`m`, `n`), and SPARC options. CLI flags override the YAML.
 
 ## ImageNet Experiments
 

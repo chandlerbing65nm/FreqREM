@@ -104,6 +104,54 @@ def compute_patch_entropy_map(x_img: torch.Tensor,
     return ent
 
 
+def compute_image_spatial_entropy(x_img: torch.Tensor, num_bins: int = 64) -> torch.Tensor:
+    """
+    Compute spatial Shannon entropy per image over pixel intensities.
+    x_img: [B,C,H,W] in [0,1]. Uses grayscale conversion if C==3.
+    Returns: [B] tensor of entropies.
+    """
+    B, C, H, W = x_img.shape
+    xin = x_img if C == 1 else rgb_to_grayscale(x_img)
+    xin = xin.clamp(0.0, 1.0)
+    N = H * W
+    # Quantize to bins
+    q = torch.clamp((xin.view(B, -1) * float(num_bins)).long(), 0, num_bins - 1)  # [B, N]
+    ones = torch.ones_like(q, dtype=torch.float32)
+    counts = torch.zeros((B, num_bins), device=x_img.device, dtype=torch.float32)
+    counts.scatter_add_(1, q, ones)
+    probs = counts / float(N)
+    eps = 1e-8
+    ent = -(probs * (probs + eps).log()).sum(dim=1)  # [B]
+    return ent
+
+
+def compute_mask_frequency_energy(x_img: torch.Tensor, mask_bw: torch.Tensor, use_color: bool = False) -> torch.Tensor:
+    """
+    Compute frequency energy (sum of squared magnitude of FFT) within the masked region.
+    x_img: [B,C,H,W] in [0,1]
+    mask_bw: [B,H,W] with 1s indicating the masked region
+    If use_color=False, compute on grayscale; else average channel energies.
+    Returns: [B]
+    """
+    B, C, H, W = x_img.shape
+    if not use_color:
+        xg = rgb_to_grayscale(x_img) if C == 3 else x_img  # [B,1,H,W]
+    else:
+        xg = x_img
+    # Apply mask to select the region content (from the original, unmasked image)
+    x_sel = xg * mask_bw.unsqueeze(1)
+    # FFT with orthonormal normalization to make energy comparable across sizes
+    Xf = torch.fft.fftn(x_sel, dim=(-2, -1), norm='ortho')
+    power = (Xf.real**2 + Xf.imag**2)
+    # Sum over spatial freq and channels
+    power_sum = power.sum(dim=(-2, -1))  # [B,C]
+    if not use_color:
+        out = power_sum[:, 0]
+    else:
+        out = power_sum.mean(dim=1)
+    return out
+
+
 def build_square_mask_from_scores(scores: torch.Tensor,
                                   H: int,
                                   W: int,
@@ -211,20 +259,22 @@ def evaluate_entropy_masking_trend(model: torch.nn.Module,
                                    example_tag: str = "",
                                    patches_per_side: int = 24,
                                    num_bins: int = 16,
+                                   spatial_entropy_bins: int = 64,
                                    use_color_entropy: bool = False,
                                    entropy_weight_power: float = 2.0,
                                    target_class_idx: Optional[int] = None,
                                    masking_mode: str = 'entropy',
-                                   rng: Optional[torch.Generator] = None) -> Tuple[List[int], List[float], List[float]]:
+                                   rng: Optional[torch.Generator] = None) -> Tuple[List[int], List[float], List[float], List[float], List[float]]:
     """
-    Compute error and mean entropy for masking strategies over a progression of ratios.
+    Compute error, prediction logits entropy, spatial image entropy, and masked-region frequency energy
+    for masking strategies over a progression of ratios.
     Masking strategies:
     - 'entropy': Select the top r% highest-entropy patches, compute a weighted centroid, and place
       a single equal-sized square mask centered at that location. The square area is approximately
       r% of the image area and aligned to the patch grid.
     - 'random': Place a single equal-sized square mask of ~r% area at a uniformly random location
       (aligned to the patch grid). If `rng` is provided, it will be used for reproducibility.
-    Returns: (ratios, errors, entropies)
+    Returns: (ratios, errors, logits_entropies, spatial_entropies, freq_energies)
     """
     model.eval()
 
@@ -235,6 +285,8 @@ def evaluate_entropy_masking_trend(model: torch.nn.Module,
     total = 0
     correct_per_ratio = {r: 0 for r in ratios}
     entropy_sum_per_ratio = {r: 0.0 for r in ratios}
+    spatial_entropy_sum_per_ratio = {r: 0.0 for r in ratios}
+    freq_energy_sum_per_ratio = {r: 0.0 for r in ratios}
 
     # Defaults for saving examples
     if mask_example_levels is None:
@@ -265,9 +317,11 @@ def evaluate_entropy_masking_trend(model: torch.nn.Module,
             for r in ratios:
                 m = r / 100.0
                 xb_masked = xb.clone()
+                # Prepare a batch mask to reuse for frequency energy and masking application
+                mask_batch = torch.zeros((B, H, W), dtype=torch.float32, device=xb.device)
                 if m == 0.0:
                     # No masking at 0%
-                    logits = model(xb_masked, return_attn=False)
+                    pass
                 else:
                     if masking_mode == 'entropy':
                         # Use top m% highest-entropy patches to compute a centroid and center a single square mask there
@@ -293,8 +347,9 @@ def evaluate_entropy_masking_trend(model: torch.nn.Module,
                             side = min(side, min(H, W))
                             # Build and apply mask
                             mask_bw = build_centered_square_mask(H, W, side, cy, cx).to(xb_masked.device)
+                            mask_batch[bi] = mask_bw
                             xb_masked[bi] = xb_masked[bi] * (1.0 - mask_bw.unsqueeze(0))
-                        logits = model(xb_masked, return_attn=False)
+                        # masked images in xb_masked
                     elif masking_mode == 'random':
                         # Randomly place a single square of ~r% area aligned to the patch grid
                         total_area = int(round(m * H * W))
@@ -312,10 +367,19 @@ def evaluate_entropy_masking_trend(model: torch.nn.Module,
                                 x0 = int(torch.randint(low=0, high=high_x, size=(1,)).item())
                             mask_bw = torch.zeros((H, W), dtype=torch.float32, device=xb_masked.device)
                             mask_bw[y0:y0 + side, x0:x0 + side] = 1.0
+                            mask_batch[bi] = mask_bw
                             xb_masked[bi] = xb_masked[bi] * (1.0 - mask_bw.unsqueeze(0))
-                        logits = model(xb_masked, return_attn=False)
+                        # masked images in xb_masked
                     else:
                         raise ValueError(f"Unknown masking_mode '{masking_mode}'. Use 'entropy' or 'random'.")
+                # Compute spatial image entropy on the masked images
+                sp_ent_b = compute_image_spatial_entropy(xb_masked, num_bins=spatial_entropy_bins)  # [B]
+                spatial_entropy_sum_per_ratio[r] += float(sp_ent_b.sum().item())
+                # Compute frequency energy on the masked region from the original images
+                freq_b = compute_mask_frequency_energy(xb, mask_batch, use_color=False)  # [B]
+                freq_energy_sum_per_ratio[r] += float(freq_b.sum().item())
+                # Forward model on masked images
+                logits = model(xb_masked, return_attn=False)
                 pred = logits.argmax(dim=1)
                 correct = (pred == yb).sum().item()
                 ent = entropy_from_logits(logits).sum().item()
@@ -385,6 +449,13 @@ def evaluate_entropy_masking_trend(model: torch.nn.Module,
                         xm = xb[bi].detach().cpu() * (1.0 - mask_bw.detach().cpu().unsqueeze(0))
                         imgs.append(xm)
                         labels.append(f"{lv}%")
+                        # Print mean and variance for each masked image
+                        try:
+                            mu = float(xm.mean().item())
+                            var = float(xm.var(unbiased=False).item())  # population variance over CxHxW
+                            print(f"[mask_example] idx={global_idx:05d} class={class_name} level={lv}% mean={mu:.6f} var={var:.6f}")
+                        except Exception as e:
+                            print(f"[mask_example] idx={global_idx:05d} class={class_name} level={lv}% failed to compute mean/var: {e}")
 
                         # Also compute attention heatmap for the masked view
                         x_masked_b = xb[bi:bi+1] * (1.0 - mask_bw.to(xb.device).unsqueeze(0).unsqueeze(0))  # [1,C,H,W]
@@ -430,7 +501,88 @@ def evaluate_entropy_masking_trend(model: torch.nn.Module,
 
     errors = [1.0 - (correct_per_ratio[r] / total) for r in ratios]
     entropies = [entropy_sum_per_ratio[r] / total for r in ratios]
-    return ratios, errors, entropies
+    spatial_entropies = [spatial_entropy_sum_per_ratio[r] / total for r in ratios]
+    freq_energies = [freq_energy_sum_per_ratio[r] / total for r in ratios]
+    return ratios, errors, entropies, spatial_entropies, freq_energies
+
+
+def plot_frequency_energy_trend(ratios, freq_energies, logits_entropies, title: str, out_path: str):
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+
+    fig, ax1 = plt.subplots(figsize=(12, 7))
+    base_fs = plt.rcParams.get('font.size', 10.0)
+    fs = base_fs * 2
+
+    # Left axis: frequency energy (FFT) in masked region
+    line_sp, = ax1.plot(ratios, freq_energies, marker='o', color='tab:purple', label='Frequency Energy (masked region)', linewidth=4)
+    ax1.set_xlabel('Masking (%)', fontsize=fs, fontweight='bold')
+    ax1.set_ylabel('Frequency Energy', color='tab:purple', fontsize=fs, fontweight='bold')
+    ax1.tick_params(axis='y', labelcolor='tab:purple', labelsize=fs * 0.9)
+    ax1.tick_params(axis='x', labelsize=fs * 0.9)
+    ax1.set_xticks(ratios)
+
+    # Right axis: prediction logits entropy
+    ax2 = ax1.twinx()
+    line_log, = ax2.plot(ratios, logits_entropies, marker='s', color='tab:blue', label='Prediction Entropy', linewidth=4)
+    ax2.set_ylabel('Prediction Entropy', color='tab:blue', fontsize=fs, fontweight='bold')
+    ax2.tick_params(axis='y', labelcolor='tab:blue', labelsize=fs * 0.9)
+
+    plt.title(title, fontsize=fs * 1.1, fontweight='bold')
+    # Combined legend
+    lines = [line_sp, line_log]
+    labels = [l.get_label() for l in lines]
+    leg = ax1.legend(lines, labels, loc='best', fontsize=fs)
+    for txt in leg.get_texts():
+        txt.set_fontweight('bold')
+    for tick in ax1.get_xticklabels() + ax1.get_yticklabels():
+        tick.set_fontweight('bold')
+    for tick in ax2.get_xticklabels() + ax2.get_yticklabels():
+        tick.set_fontweight('bold')
+    fig.tight_layout()
+    plt.savefig(out_path, dpi=200, bbox_inches='tight')
+    plt.close(fig)
+
+
+def plot_spatial_entropy_trend(ratios, spatial_entropies, logits_entropies, title: str, out_path: str):
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+
+    fig, ax1 = plt.subplots(figsize=(12, 7))
+    base_fs = plt.rcParams.get('font.size', 10.0)
+    fs = base_fs * 2
+
+    # Normalize spatial entropy by its unmasked (0%) value and plot 1 - normalized so it increases with masking
+    eps = 1e-12
+    base_sp = spatial_entropies[0] if len(spatial_entropies) > 0 else 1.0
+    spatial_norm_1m = [1.0 - (s / max(base_sp, eps)) for s in spatial_entropies]
+
+    # Left axis: 1 - normalized spatial entropy (increasing curve)
+    line_sp, = ax1.plot(ratios, spatial_norm_1m, marker='o', color='tab:green', label='1 - Normalized Spatial Entropy', linewidth=4)
+    ax1.set_xlabel('Masking (%)', fontsize=fs, fontweight='bold')
+    ax1.set_ylabel('1 - Normalized Spatial Entropy', color='tab:green', fontsize=fs, fontweight='bold')
+    ax1.tick_params(axis='y', labelcolor='tab:green', labelsize=fs * 0.9)
+    ax1.tick_params(axis='x', labelsize=fs * 0.9)
+    ax1.set_xticks(ratios)
+
+    # Right axis: prediction logits entropy (no scaling; separate axis handles range)
+    ax2 = ax1.twinx()
+    line_log, = ax2.plot(ratios, logits_entropies, marker='s', color='tab:blue', label='Prediction Entropy', linewidth=4)
+    ax2.set_ylabel('Prediction Entropy', color='tab:blue', fontsize=fs, fontweight='bold')
+    ax2.tick_params(axis='y', labelcolor='tab:blue', labelsize=fs * 0.9)
+
+    plt.title(title, fontsize=fs * 1.1, fontweight='bold')
+    # Combined legend
+    lines = [line_sp, line_log]
+    labels = [l.get_label() for l in lines]
+    leg = ax1.legend(lines, labels, loc='best', fontsize=fs)
+    for txt in leg.get_texts():
+        txt.set_fontweight('bold')
+    for tick in ax1.get_xticklabels() + ax1.get_yticklabels():
+        tick.set_fontweight('bold')
+    for tick in ax2.get_xticklabels() + ax2.get_yticklabels():
+        tick.set_fontweight('bold')
+    fig.tight_layout()
+    plt.savefig(out_path, dpi=200, bbox_inches='tight')
+    plt.close(fig)
 
 
 def plot_trend(ratios, errors, entropies, title: str, out_path: str):
@@ -496,9 +648,9 @@ def main():
     parser = argparse.ArgumentParser(description='Entropy-based masking trend on CIFAR-10-C for source model (no adaptation).')
     parser.add_argument('--data_dir', type=str, required=True,
                         help='Path to CIFAR-10-C data directory')
-    parser.add_argument('--ckpt_dir', type=str, default='/users/doloriel/work/Repo/SPARE/ckpt',
+    parser.add_argument('--ckpt_dir', type=str, default='/users/doloriel/work/Repo/SPARC/ckpt',
                         help='Checkpoint directory (used by robustbench.load_model)')
-    parser.add_argument('--checkpoint', type=str, default='/users/doloriel/work/Repo/SPARE/ckpt/vit_base_384_cifar10.t7',
+    parser.add_argument('--checkpoint', type=str, default='/users/doloriel/work/Repo/SPARC/ckpt/vit_base_384_cifar10.t7',
                         help='Path to ViT-Base 384 checkpoint for CIFAR-10')
     parser.add_argument('--batch_size', type=int, default=50)
     parser.add_argument('--num_examples', type=int, default=10000,
@@ -527,6 +679,12 @@ def main():
                         help="Masking strategy to use: 'entropy' (default) or 'random' for random square placement")
     parser.add_argument('--random_seed', type=int, default=None,
                         help='Optional random seed for reproducible random masking')
+    parser.add_argument('--save_spatial_entropy_plot', action='store_true',
+                        help='Also save a per-corruption plot of spatial image entropy (left y) vs prediction logits entropy (right y) across masking progression')
+    parser.add_argument('--spatial_entropy_bins', type=int, default=64,
+                        help='Number of histogram bins for spatial image entropy computation')
+    parser.add_argument('--save_frequency_energy_plot', action='store_true',
+                        help='Also save a per-corruption plot of frequency energy (FFT) of the masked region (left y) vs prediction logits entropy (right y) across masking progression')
     args = parser.parse_args()
 
     # Determine target class index if user specified one
@@ -581,7 +739,7 @@ def main():
             raise ValueError(f"patch_size {args.patch_size} must evenly divide 384")
         patches_per_side = H // args.patch_size
 
-        ratios, errors, entropies = evaluate_entropy_masking_trend(
+        ratios, errors, entropies, spatial_entropies, freq_energies = evaluate_entropy_masking_trend(
             model, x_test, y_test, device,
             batch_size=args.batch_size,
             ratios=ratios_list,
@@ -591,6 +749,7 @@ def main():
             example_tag=ctype,
             patches_per_side=patches_per_side,
             num_bins=args.entropy_bins,
+            spatial_entropy_bins=args.spatial_entropy_bins,
             use_color_entropy=args.use_color_entropy,
             entropy_weight_power=args.entropy_weight_power,
             target_class_idx=target_class_idx,
@@ -603,6 +762,18 @@ def main():
         out_path = os.path.join(args.out_dir, out_name)
         plot_trend(ratios, errors, entropies, title, out_path)
         print(f'Saved plot: {out_path}')
+
+        if args.save_spatial_entropy_plot:
+            out_name_se = f'{ctype}_spatial_entropy_trend.png'
+            out_path_se = os.path.join(args.out_dir, out_name_se)
+            plot_spatial_entropy_trend(ratios, spatial_entropies, entropies, title + ' – Spatial vs Logits Entropy', out_path_se)
+            print(f'Saved plot: {out_path_se}')
+
+        if args.save_frequency_energy_plot:
+            out_name_fe = f'{ctype}_frequency_energy_trend.png'
+            out_path_fe = os.path.join(args.out_dir, out_name_fe)
+            plot_frequency_energy_trend(ratios, freq_energies, entropies, title + ' – Frequency Energy vs Logits Entropy', out_path_fe)
+            print(f'Saved plot: {out_path_fe}')
 
 
 if __name__ == '__main__':

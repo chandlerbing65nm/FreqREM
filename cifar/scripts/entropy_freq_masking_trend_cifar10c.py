@@ -81,10 +81,20 @@ def precompute_radius_grid(H: int, W: int, device: torch.device) -> torch.Tensor
 
 
 def apply_frequency_mask(x: torch.Tensor,
-                         mask_percent: float) -> torch.Tensor:
+                         mask_percent: float,
+                         mode: str = 'lowest_energy') -> torch.Tensor:
     """
-    Apply a frequency-domain mask that progressively zeros the lowest-energy
-    frequency bins per image, while always preserving the DC component.
+    Apply a frequency-domain mask while always preserving the DC component.
+
+    Modes:
+    - 'lowest_energy': progressively zeros the lowest-energy frequency bins per image
+      (adaptive per image).
+    - 'radial_highfreq': progressively zeros the highest-radius frequency bins
+      (same mask for all images in the batch). This behaves like a low-pass
+      filter and yields visually increasing blur as the percentage grows.
+    - 'radial_lowfreq': progressively zeros the lowest-radius frequency bins
+      (same mask for all images). This behaves like a high-pass filter, removing
+      low frequencies around DC (DC itself is preserved).
 
     x: [B,C,H,W] in [0,1]
     mask_percent: percentage (0-100) of non-DC frequency bins to zero.
@@ -96,31 +106,73 @@ def apply_frequency_mask(x: torch.Tensor,
     # Forward FFT (complex). No shift needed; DC is at index (0,0).
     X = torch.fft.fft2(x.to(torch.float32), dim=(-2, -1), norm='ortho')  # [B,C,H,W]
 
-    # Compute power per frequency bin summed over channels: [B,H,W]
-    power = (X.abs() ** 2).sum(dim=1)
-
-    # Exclude DC from masking by assigning it +inf power so it is never among lowest energies
-    # DC index in unshifted spectrum is (0,0).
-    power[:, 0, 0] = float('inf')
-
     # Number of bins to mask (excluding DC)
     total_bins = H * W - 1
     k = int(round((mask_percent / 100.0) * total_bins))
     if k <= 0:
         X_masked = X
     else:
-        # Find indices of k lowest-energy bins per image
-        flat_power = power.view(B, -1)  # [B, H*W]
-        # Note: DC at flat index 0 is already set to inf and won't be selected
-        vals, idxs = torch.topk(flat_power, k, dim=1, largest=False, sorted=False)  # [B, k]
+        if mode == 'lowest_energy':
+            # Compute power per frequency bin summed over channels: [B,H,W]
+            power = (X.abs() ** 2).sum(dim=1)
+            # Exclude DC from masking by assigning it +inf power so it is never among lowest energies
+            power[:, 0, 0] = float('inf')
 
-        # Build per-image keep mask in frequency domain: start with ones, set selected indices to 0 (mask)
-        keep = torch.ones((B, H * W), device=x.device, dtype=X.dtype)
-        keep.scatter_(dim=1, index=idxs, src=torch.zeros_like(idxs, dtype=X.dtype))
-        keep = keep.view(B, 1, H, W)  # broadcast to channels
+            # Find indices of k lowest-energy bins per image
+            flat_power = power.view(B, -1)  # [B, H*W]
+            # Note: DC at flat index 0 is already set to inf and won't be selected
+            _, idxs = torch.topk(flat_power, k, dim=1, largest=False, sorted=False)  # [B, k]
 
-        # Apply mask to all channels
-        X_masked = X * keep
+            # Build per-image keep mask in frequency domain: start with ones, set selected indices to 0 (mask)
+            keep = torch.ones((B, H * W), device=x.device, dtype=X.dtype)
+            keep.scatter_(dim=1, index=idxs, src=torch.zeros_like(idxs, dtype=X.dtype))
+            keep = keep.view(B, 1, H, W)  # broadcast to channels
+
+            # Apply mask to all channels
+            X_masked = X * keep
+        elif mode == 'radial_highfreq':
+            # Center the spectrum, build a radial mask around the centered DC, then unshift back.
+            Xc = _fftshift2(X)  # [B,C,H,W]
+            R = precompute_radius_grid(H, W, x.device)  # distances from centered origin
+            R_flat = R.view(-1)
+            center_idx = (H // 2) * W + (W // 2)
+            # Ensure DC stays kept by making it the smallest radius
+            R_flat_dc_safe = R_flat.clone()
+            R_flat_dc_safe[center_idx] = -float('inf')
+
+            # Keep the (total_bins - k) smallest radii (plus DC), mask the rest
+            num_keep = total_bins - k
+            sorted_idx = torch.argsort(R_flat_dc_safe, dim=0, descending=False)
+            keep_idx_flat = sorted_idx[: num_keep + 1]  # +1 to include DC
+            keep_mask_flat = torch.zeros_like(R_flat_dc_safe, dtype=torch.bool)
+            keep_mask_flat[keep_idx_flat] = True
+            keep_mask = keep_mask_flat.view(1, 1, H, W).to(dtype=X.dtype)  # [1,1,H,W]
+
+            Xc_masked = Xc * keep_mask
+            X_masked = _ifftshift2(Xc_masked)
+        elif mode == 'radial_lowfreq':
+            # Center the spectrum; mask the smallest-radius bins (near DC), but keep DC itself.
+            Xc = _fftshift2(X)  # [B,C,H,W]
+            R = precompute_radius_grid(H, W, x.device)
+            R_flat = R.view(-1)
+            center_idx = (H // 2) * W + (W // 2)
+            # Make DC effectively smallest and exclude it from masking range by skipping later
+            R_flat_dc_safe = R_flat.clone()
+            R_flat_dc_safe[center_idx] = -float('inf')
+
+            sorted_idx = torch.argsort(R_flat_dc_safe, dim=0, descending=False)
+            # Mask k smallest non-DC radii: skip index 0 (DC), take next k
+            mask_idx_flat = sorted_idx[1: 1 + k]
+            keep_mask_flat = torch.ones_like(R_flat_dc_safe, dtype=torch.bool)
+            keep_mask_flat[mask_idx_flat] = False
+            # Always keep DC
+            keep_mask_flat[center_idx] = True
+            keep_mask = keep_mask_flat.view(1, 1, H, W).to(dtype=X.dtype)
+
+            Xc_masked = Xc * keep_mask
+            X_masked = _ifftshift2(Xc_masked)
+        else:
+            raise ValueError(f"Unknown frequency masking mode: {mode}")
 
     # Inverse FFT back to image space
     x_rec = torch.fft.ifft2(X_masked, dim=(-2, -1), norm='ortho').real
@@ -139,7 +191,9 @@ def evaluate_frequency_masking_trend(model: torch.nn.Module,
                                      mask_figs_dir: str = None,
                                      example_tag: str = "",
                                      freq_masking_type: Optional[str] = None,
-                                     target_class_idx: Optional[int] = None) -> Tuple[List[int], List[float], List[float]]:
+                                     target_class_idx: Optional[int] = None,
+                                     model_input_size: Tuple[int, int] = (384, 384),
+                                     save_frequency_energy_plot: bool = False) -> Tuple[List[int], List[float], List[float]]:
     """
     Compute error and mean entropy across progressive frequency masking ratios.
 
@@ -167,6 +221,7 @@ def evaluate_frequency_masking_trend(model: torch.nn.Module,
     with torch.no_grad():
         N = x.shape[0]
         B_full, C_full, H_full, W_full = x.shape
+        tgtH, tgtW = model_input_size
 
         for start in tqdm(range(0, N, batch_size), total=(N + batch_size - 1)//batch_size, desc="Batches", leave=False):
             end = min(start + batch_size, N)
@@ -176,8 +231,13 @@ def evaluate_frequency_masking_trend(model: torch.nn.Module,
             for r in ratios:
                 m = float(r)
                 # Apply lowest-energy frequency masking and evaluate
-                xb_masked = apply_frequency_mask(xb, mask_percent=m)
-                logits = model(xb_masked, return_attn=False)
+                xb_masked = apply_frequency_mask(xb, mask_percent=m, mode=(freq_masking_type or 'lowest_energy'))
+                # Resize to model input size right before the forward pass
+                if (xb_masked.shape[-2], xb_masked.shape[-1]) != (tgtH, tgtW):
+                    xb_in = F.interpolate(xb_masked, size=(tgtH, tgtW), mode='bilinear', align_corners=False)
+                else:
+                    xb_in = xb_masked
+                logits = model(xb_in, return_attn=False)
 
                 pred = logits.argmax(dim=1)
                 correct = (pred == yb).sum().item()
@@ -206,15 +266,32 @@ def evaluate_frequency_masking_trend(model: torch.nn.Module,
                     imgs = []
                     labels = []
                     attn_maps = []
+                    specs = []
 
+                    base_img_cpu = None
                     for lv in mask_example_levels:
-                        xm = apply_frequency_mask(xb[bi:bi+1], mask_percent=float(lv))
-                        xm_cpu = xm[0].detach().cpu()
+                        xm_masked = apply_frequency_mask(xb[bi:bi+1], mask_percent=float(lv), mode=(freq_masking_type or 'lowest_energy'))
+                        # For visualization: nearest neighbor to avoid extra blur from interpolation
+                        if (xm_masked.shape[-2], xm_masked.shape[-1]) != (tgtH, tgtW):
+                            xm_plot = F.interpolate(xm_masked, size=(tgtH, tgtW), mode='nearest')
+                        else:
+                            xm_plot = xm_masked
+                        xm_cpu = xm_plot[0].detach().cpu()
                         imgs.append(xm_cpu)
-                        labels.append(f"{lv}%")
+                        if base_img_cpu is None:
+                            base_img_cpu = xm_cpu
+                            labels.append(f"{lv}% [{freq_masking_type or 'lowest_energy'}]")
+                        else:
+                            delta = (xm_cpu - base_img_cpu).abs().mean().item()
+                            labels.append(f"{lv}% (Δ={delta:.3f}) [{freq_masking_type or 'lowest_energy'}]")
 
                         # Attention heatmap
-                        outputs_m, attn_m = model(xm.to(device), return_attn=True)
+                        # For model: bilinear upsampling
+                        if (xm_masked.shape[-2], xm_masked.shape[-1]) != (tgtH, tgtW):
+                            xm_in = F.interpolate(xm_masked, size=(tgtH, tgtW), mode='bilinear', align_corners=False)
+                        else:
+                            xm_in = xm_masked
+                        outputs_m, attn_m = model(xm_in.to(device), return_attn=True)
                         attn_tokens = attn_m.mean(dim=1)[:, 0, 1:]  # [1, T]
                         T = attn_tokens.shape[-1]
                         token_side = int(round(math.sqrt(T)))
@@ -222,16 +299,32 @@ def evaluate_frequency_masking_trend(model: torch.nn.Module,
                             token_side = int(math.floor(math.sqrt(T)))
                             attn_tokens = attn_tokens[:, :token_side * token_side]
                         attn_grid = attn_tokens.view(1, 1, token_side, token_side)
-                        attn_up = F.interpolate(attn_grid, size=(H_full, W_full), mode='bilinear', align_corners=False)[0, 0]
+                        attn_up = F.interpolate(attn_grid, size=(tgtH, tgtW), mode='bilinear', align_corners=False)[0, 0]
                         attn_norm = (attn_up - attn_up.min()) / (attn_up.max() - attn_up.min() + 1e-8)
                         attn_maps.append(attn_norm.detach().cpu())
 
+                        # Optional: frequency magnitude spectrum visualization (log scale)
+                        if save_frequency_energy_plot:
+                            Xcur = torch.fft.fft2(xm_masked.to(torch.float32), dim=(-2, -1), norm='ortho')
+                            Xcur_c = _fftshift2(Xcur)
+                            # Sum over channels, take magnitude
+                            mag = (Xcur_c.abs() ** 2).sum(dim=1, keepdim=True)
+                            mag = mag[0, 0]  # [H,W]
+                            mag = torch.log1p(mag)
+                            mag = (mag - mag.min()) / (mag.max() - mag.min() + 1e-8)
+                            if (mag.shape[-2], mag.shape[-1]) != (tgtH, tgtW):
+                                mag = F.interpolate(mag.unsqueeze(0).unsqueeze(0), size=(tgtH, tgtW), mode='nearest')[0, 0]
+                            specs.append(mag.detach().cpu())
+
                     K = len(imgs)
-                    fig, axes = plt.subplots(2, K, figsize=(4*K, 8))
+                    rows = 2
+                    fig, axes = plt.subplots(rows, K, figsize=(4*K, 4*rows))
+                    base_fs = plt.rcParams.get('font.size', 10.0)
                     for j in range(K):
                         axes[0, j].imshow(imgs[j].permute(1, 2, 0).numpy())
-                        base_fs = plt.rcParams.get('font.size', 10.0)
-                        axes[0, j].set_title(labels[j], fontsize=base_fs * 2.5, fontweight='bold')
+                        # Put the masking level label aligned with each column
+                        if j < len(mask_example_levels):
+                            axes[0, j].set_title(f"{mask_example_levels[j]}%", fontsize=base_fs * 2.2, fontweight='bold')
                         axes[0, j].axis('off')
                     for j in range(K):
                         axes[1, j].imshow(attn_maps[j].numpy(), cmap='inferno')
@@ -307,9 +400,9 @@ def main():
     parser = argparse.ArgumentParser(description='Frequency-masked trend on CIFAR-10-C for source model (no adaptation).')
     parser.add_argument('--data_dir', type=str, required=True,
                         help='Path to CIFAR-10-C data directory')
-    parser.add_argument('--ckpt_dir', type=str, default='/users/doloriel/work/Repo/SPARE/ckpt',
+    parser.add_argument('--ckpt_dir', type=str, default='/users/doloriel/work/Repo/SPARC/ckpt',
                         help='Checkpoint directory (used by robustbench.load_model)')
-    parser.add_argument('--checkpoint', type=str, default='/users/doloriel/work/Repo/SPARE/ckpt/vit_base_384_cifar10.t7',
+    parser.add_argument('--checkpoint', type=str, default='/users/doloriel/work/Repo/SPARC/ckpt/vit_base_384_cifar10.t7',
                         help='Path to ViT-Base 384 checkpoint for CIFAR-10')
     parser.add_argument('--batch_size', type=int, default=50)
     parser.add_argument('--num_examples', type=int, default=10000,
@@ -326,6 +419,11 @@ def main():
                         help='Directory to save masked example figures (required if saving examples)')
     parser.add_argument('--example_class', type=str, default=None,
                         help='If set, only save example figures for this class (name e.g., "cat" or index 0-9)')
+    parser.add_argument('--freq_masking_type', type=str, default='radial_highfreq',
+                        choices=['lowest_energy', 'radial_highfreq', 'radial_lowfreq'],
+                        help='Frequency masking strategy. "lowest_energy" zeros lowest-energy bins per image; "radial_highfreq" zeros high-frequency bins (low-pass, produces blur); "radial_lowfreq" zeros low-frequency bins around DC (high-pass, preserves edges/textures).')
+    parser.add_argument('--save_frequency_energy_plot', action='store_true',
+                        help='If set, add a third row to the saved example figures showing the log-magnitude frequency spectrum after masking.')
     args = parser.parse_args()
 
     # Determine target class index if user specified one
@@ -359,8 +457,8 @@ def main():
     for ctype in tqdm(corruption_types, desc="Corruptions"):
         # Load the specified corruption at given severity
         x_test, y_test = load_cifar10c(args.num_examples, args.severity, args.data_dir, False, [ctype])
-        # Resize to 384x384 for ViT-B/16-384
-        x_test = F.interpolate(x_test, size=(384, 384), mode='bilinear', align_corners=False)
+        # Do NOT resize here; masking should be applied at native resolution (32x32).
+        # Resizing to model input size is handled inside evaluate_frequency_masking_trend just before the forward pass.
 
         start, stop, step = args.progression
         ratios_list = list(range(start, stop + (0 if (stop - start) % max(step,1) != 0 else 0) + 1, step))
@@ -377,6 +475,7 @@ def main():
             example_tag=ctype,
             freq_masking_type=args.freq_masking_type,
             target_class_idx=target_class_idx,
+            save_frequency_energy_plot=args.save_frequency_energy_plot,
         )
 
         title = title_map.get(ctype, ctype)

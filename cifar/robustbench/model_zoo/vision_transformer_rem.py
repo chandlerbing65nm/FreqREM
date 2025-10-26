@@ -336,6 +336,10 @@ class VisionTransformer(nn.Module):
             x = torch.cat((cls_token, x), dim=1)
         else:
             x = torch.cat((cls_token, self.dist_token.expand(x.shape[0], -1, -1), x), dim=1)
+        # Apply class-token feature polynomial if available
+        if hasattr(self, 'taln_cls_poly') and isinstance(self.taln_cls_poly, nn.Module):
+            x_cls = self.taln_cls_poly(x[:, 0, :])
+            x = torch.cat((x_cls.unsqueeze(1), x[:, 1:, :]), dim=1)
         x = self.pos_drop(x + self.pos_embed)
         for i, blk in enumerate(self.blocks):
             if i < len(self.blocks) - 1:

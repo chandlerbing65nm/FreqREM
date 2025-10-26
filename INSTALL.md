@@ -1,6 +1,6 @@
 # Environment Setup
 
-This guide summarizes how to create a working ROCm-based environment for the SPARE repository.
+This guide summarizes how to create a working ROCm-based environment for the SPARC repository.
 
 ## 1. Create Conda Environment
 

@@ -3,6 +3,7 @@ import os
 import logging
 import math
 
+import torch.nn as nn
 import torch.nn.functional as F
 from .vision_transformer_rem import VisionTransformer as VisionTransformer_REM
 from timm.models.vision_transformer import VisionTransformer
@@ -384,6 +385,10 @@ class rem_vit(VisionTransformer_REM):
         device = x.device
         cls_token = self.cls_token.expand(x.shape[0], -1, -1)  # stole cls_tokens impl from Phil Wang, thanks
         x = torch.cat((cls_token, x), dim=1)
+        # Apply class-token feature polynomial if available
+        if hasattr(self, 'taln_cls_poly') and isinstance(self.taln_cls_poly, nn.Module):
+            x_cls = self.taln_cls_poly(x[:, 0, :])
+            x = torch.cat((x_cls.unsqueeze(1), x[:, 1:, :]), dim=1)
         x = x + self.pos_embed
 
         if len_keep is not None:

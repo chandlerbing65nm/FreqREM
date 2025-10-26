@@ -35,7 +35,7 @@ def evaluate(description):
     # configure model
     base_model = load_model(cfg.MODEL.ARCH, cfg.CKPT_DIR,
                        cfg.CORRUPTION.DATASET, ThreatModel.corruptions)
-    checkpoint = torch.load("/users/doloriel/work/Repo/SPARE/ckpt/pretrain_cifar100.t7", map_location='cpu')
+    checkpoint = torch.load("/users/doloriel/work/Repo/SPARC/ckpt/pretrain_cifar100.t7", map_location='cpu')
     checkpoint = rm_substr_from_state_dict(checkpoint['model'], 'module.')
     base_model.load_state_dict(checkpoint, strict=True)
     del checkpoint
