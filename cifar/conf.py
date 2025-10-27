@@ -246,7 +246,7 @@ def load_cfg_fom_args(description="Config options."):
     parser.add_argument("opts", default=None, nargs=argparse.REMAINDER,
                         help="See conf.py for all options")
     parser.add_argument("--index", default=1, type=int)
-    parser.add_argument("--seed", default=0, type=int)
+    parser.add_argument("--seed", default=None, type=int)
     parser.add_argument("--size", default=384, type=int)
     parser.add_argument("--checkpoint", default=None, type=str)
     parser.add_argument("--unc_thr", default=0.05, type=float)
@@ -345,6 +345,9 @@ def load_cfg_fom_args(description="Config options."):
     cfg.size = args.size
     cfg.DATA_DIR = args.data_dir
     cfg.TEST.ckpt = args.checkpoint
+    # Map CLI seed to config if provided; otherwise keep YAML/default
+    if args.seed is not None:
+        cfg.RNG_SEED = int(args.seed)
 
     # Model LayerNorm selection from CLI
     if args.ln_quarter is not None:
@@ -442,7 +445,11 @@ def load_cfg_fom_args(description="Config options."):
 
     np.random.seed(cfg.RNG_SEED)
     torch.manual_seed(cfg.RNG_SEED)
-    # torch.cuda.manual_seed(seed)
+    try:
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(cfg.RNG_SEED)
+    except Exception:
+        pass
     random.seed(cfg.RNG_SEED)
     torch.backends.cudnn.benchmark = cfg.CUDNN.BENCHMARK
 
@@ -451,5 +458,6 @@ def load_cfg_fom_args(description="Config options."):
                torch.backends.cudnn.version()]
     logger.info(
         "PyTorch Version: torch={}, cuda={}, cudnn={}".format(*version))
+    logger.info("Using RNG seed: %d", cfg.RNG_SEED)
     logger.info(cfg)
     return args

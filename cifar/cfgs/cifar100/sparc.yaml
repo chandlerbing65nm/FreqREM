@@ -4,6 +4,7 @@ MODEL:
   LN_QUARTER: default       # LayerNorm adaptation scope: default|q1|q2|q3|q4|all
 TEST:
   BATCH_SIZE: 20
+RNG_SEED: 1
 CORRUPTION:
   DATASET: cifar100
   SEVERITY:

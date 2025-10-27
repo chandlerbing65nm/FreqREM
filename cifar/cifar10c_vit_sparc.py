@@ -39,6 +39,7 @@ def evaluate(description):
     """
     args = load_cfg_fom_args(description)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    logger.info("[cifar10] RNG seed in use: %d", cfg.RNG_SEED)
     # configure model
     base_model = load_model(cfg.MODEL.ARCH, cfg.CKPT_DIR,
                        cfg.CORRUPTION.DATASET, ThreatModel.corruptions)
@@ -368,6 +369,7 @@ def setup_sparc(model):
         random_masking=cfg.SPARC.RANDOM_MASKING,
         num_squares=cfg.SPARC.NUM_SQUARES,
         mask_type=cfg.SPARC.MASK_TYPE,
+        seed=cfg.RNG_SEED,
         plot_loss=cfg.SPARC.PLOT_LOSS,
         plot_loss_path=cfg.SPARC.PLOT_LOSS_PATH,
         plot_ema_alpha=cfg.SPARC.PLOT_EMA_ALPHA,

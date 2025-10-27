@@ -361,7 +361,8 @@ def build_random_square_mask(H: int,
                              patch_h: int,
                              patch_w: int,
                              ratio: float,
-                             num_squares: int = 1) -> torch.Tensor:
+                             num_squares: int = 1,
+                             generator: torch.Generator = None) -> torch.Tensor:
     """
     Place num_squares equal-sized squares to cover ~ratio of the image area at random grid-aligned positions.
     Attempts to avoid overlaps first; if not enough positions, allows overlaps to reach the desired count.
@@ -398,8 +399,8 @@ def build_random_square_mask(H: int,
     attempts = 0
     max_attempts = 1000
     while len(placed) < num_squares and attempts < max_attempts:
-        ry = int(torch.randint(low=0, high=y_positions, size=(1,)).item())
-        rx = int(torch.randint(low=0, high=x_positions, size=(1,)).item())
+        ry = int(torch.randint(low=0, high=y_positions, size=(1,), generator=generator).item())
+        rx = int(torch.randint(low=0, high=x_positions, size=(1,), generator=generator).item())
         y0 = min(max_y0, ry * patch_h)
         x0 = min(max_x0, rx * patch_w)
         if not overlaps(y0, x0, side, placed):
@@ -408,8 +409,8 @@ def build_random_square_mask(H: int,
 
     # If we still need more squares, allow overlaps
     while len(placed) < num_squares:
-        ry = int(torch.randint(low=0, high=y_positions, size=(1,)).item())
-        rx = int(torch.randint(low=0, high=x_positions, size=(1,)).item())
+        ry = int(torch.randint(low=0, high=y_positions, size=(1,), generator=generator).item())
+        rx = int(torch.randint(low=0, high=x_positions, size=(1,), generator=generator).item())
         y0 = min(max_y0, ry * patch_h)
         x0 = min(max_x0, rx * patch_w)
         placed.append((y0, x0, side))
@@ -436,6 +437,7 @@ class SPARC(nn.Module):
                  random_masking: bool = True,
                  num_squares: int = 1,
                  mask_type: str = 'binary',
+                 seed: int = None,
                  # Plotting options
                  plot_loss: bool = False,
                  plot_loss_path: str = "",
@@ -486,6 +488,13 @@ class SPARC(nn.Module):
         mt = str(mask_type).lower()
         assert mt in ['binary', 'mean', 'gaussian'], "mask_type must be one of ['binary','mean','gaussian']"
         self.mask_type = mt
+        # Local RNG for deterministic masking when seed is provided
+        self._rng = torch.Generator(device='cpu')
+        try:
+            if seed is not None:
+                self._rng.manual_seed(int(seed))
+        except Exception:
+            pass
 
         # Plotting state
         self.plot_loss = bool(plot_loss)
@@ -829,7 +838,7 @@ class SPARC(nn.Module):
                 for bi in range(B):
                     if self.random_masking:
                         mask_bw = build_random_square_mask(
-                            H, W, patch_h, patch_w, ratio=mfrac, num_squares=self.num_squares
+                            H, W, patch_h, patch_w, ratio=mfrac, num_squares=self.num_squares, generator=self._rng
                         ).to(xb_masked.device)
                     else:
                         raise ValueError("other masking than random masking is not supported")
