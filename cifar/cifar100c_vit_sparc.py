@@ -336,6 +336,10 @@ def setup_sparc(model):
         logsparc_temp=cfg.SPARC.LOGSPARC_TEMP,
         logsparc_type2=cfg.SPARC.LOGSPARC_TYPE2,
         logsparc_type3=cfg.SPARC.LOGSPARC_TYPE3,
+        # New LogSPARC ablation flags
+        logsparc_abl_type1=cfg.SPARC.LOGSPARC_ABL_TYPE1,
+        logsparc_abl_type2=cfg.SPARC.LOGSPARC_ABL_TYPE2,
+        logsparc_abl_type3=cfg.SPARC.LOGSPARC_ABL_TYPE3,
     )
     logger.info(f"optimizer for adaptation: %s", optimizer)
     return rem_model

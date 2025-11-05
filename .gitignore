@@ -71,15 +71,15 @@ venv.bak/
 Thumbs.db
 Desktop.ini
 
-# Logs and temp
+# Logs and tempk
 *.log
 logs/**/*.log
 *.tmp
 *.swp
-*.swo
+*.swok
 
 # SLURM job outputs
-slurm-*.out
+slurm-*.outk
 
 # REM repository gitignore
 # Ignore SLURM script
@@ -87,7 +87,7 @@ slurm.sh
 
 # Ignore outputs and logs
 output/
-logs/
+# logs*
 ckpt/
 */plots
 # */scripts

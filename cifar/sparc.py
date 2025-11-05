@@ -460,7 +460,14 @@ class SPARC(nn.Module):
                  logsparc_reg: float = 0.0,
                  logsparc_temp: float = 0.0,
                  logsparc_type2: bool = False,
-                 logsparc_type3: bool = False):
+                 logsparc_type3: bool = False,
+                 # LogSPARC ablation flags (work in combination with logsparc_enable)
+                 #  - logsparc_abl_type1: remove L2 normalization after gamma/beta transform
+                 #  - logsparc_abl_type2: only apply L2 normalization; skip gamma/beta transform
+                 #  - logsparc_abl_type3: apply chosen transform/normalization policy to unmasked (m=0) logits as well
+                 logsparc_abl_type1: bool = False,
+                 logsparc_abl_type2: bool = False,
+                 logsparc_abl_type3: bool = False):
         super().__init__()
         self.model = model
         self.optimizer = optimizer
@@ -545,6 +552,10 @@ class SPARC(nn.Module):
         self.logsparc_temp = float(logsparc_temp)
         self.logsparc_type2 = bool(logsparc_type2)
         self.logsparc_type3 = bool(logsparc_type3)
+        # LogSPARC ablation switches
+        self.logsparc_abl_type1 = bool(logsparc_abl_type1)
+        self.logsparc_abl_type2 = bool(logsparc_abl_type2)
+        self.logsparc_abl_type3 = bool(logsparc_abl_type3)
 
         # Debug logging control
         self._debug_poly_log_limit = 3
@@ -768,9 +779,14 @@ class SPARC(nn.Module):
                 cls0, out0 = self._get_cls_and_logits(x)
                 if isinstance(out0, tuple):
                     out0 = out0[0]
-                outputs_list.append(out0)
-                # For regularizer, compute gamma/beta at m=0 (not applied to logits)
-                if (self.logsparc_enable != 'none') and (self.logsparc_reg > 0.0) and (cls0 is not None):
+                # [NEW] LogSPARC ablation type3: also apply transform/normalization to unmasked logits
+                # Note: Ablations operate only when logsparc_enable != 'none'
+                apply_type3 = (self.logsparc_enable != 'none') and self.logsparc_abl_type3 and (cls0 is not None)
+                # For regularizer and/or abl_type3, compute gamma/beta at m=0
+                need_gb_m0 = (self.logsparc_enable != 'none') and (cls0 is not None) and (apply_type3 or (self.logsparc_reg > 0.0))
+                g0 = None
+                b0 = None
+                if need_gb_m0:
                     # Lazy-create Logsparc head
                     if self.logsparc_head is None:
                         in_dim = int(cls0.shape[-1])
@@ -788,7 +804,7 @@ class SPARC(nn.Module):
                             except Exception:
                                 pass
                             self._logsparc_params_added = True
-                    # Compute gamma/beta for regularizer only (do not apply at m=0)
+                    # Compute gamma/beta at m=0 (temperature NOT applied for m=0)
                     if self.logsparc_type3:
                         # global per-class
                         cls_avg = cls0.mean(dim=0, keepdim=True)  # [1,D]
@@ -796,7 +812,6 @@ class SPARC(nn.Module):
                         K = raw.shape[-1] // 2
                         raw_g = raw[:, :K]
                         raw_b = raw[:, K:]
-                        # No temperature at m=0 (regularizer only)
                         gb_g = F.softplus(raw_g)
                         gb_b = F.softplus(raw_b)
                         g0 = gb_g.squeeze(0)  # [K]
@@ -819,11 +834,51 @@ class SPARC(nn.Module):
                         gb_b = F.softplus(raw_b)
                         g0 = gb_g   # [B]
                         b0 = gb_b   # [B]
-                    logsparc_gamma_levels.append(g0)
-                    logsparc_beta_levels.append(b0)
+                # Apply ablation type3 to unmasked logits if requested
+                if apply_type3:
+                    # Determine gamma/beta usage per mode
+                    if g0 is None or b0 is None:
+                        # Safety: shouldn't happen due to need_gb_m0 guard
+                        logsparc_gamma_levels.append(None)
+                        logsparc_beta_levels.append(None)
+                        outputs_list.append(out0)
+                    else:
+                        if self.logsparc_enable == 'gamma':
+                            beta_use = torch.zeros_like(b0 if b0.dim()>1 else b0.unsqueeze(0).expand_as(g0))
+                            gamma_use = g0
+                        elif self.logsparc_enable == 'beta':
+                            beta_use = b0
+                            gamma_use = torch.ones_like(b0)
+                        else:  # 'gammabeta'
+                            beta_use = b0
+                            gamma_use = g0
+                        # Align shapes for broadcast to [B,K]
+                        if gamma_use.dim() == 1:
+                            gamma_apply = gamma_use.unsqueeze(0).expand(out0.shape[0], -1) if gamma_use.shape[0] == out0.shape[-1] else gamma_use.unsqueeze(1)
+                            beta_apply = beta_use.unsqueeze(0).expand(out0.shape[0], -1) if beta_use.shape[0] == out0.shape[-1] else beta_use.unsqueeze(1)
+                        else:
+                            gamma_apply = gamma_use
+                            beta_apply = beta_use
+                        # logsparc_abl_type2: skip gamma/beta transform, only L2 norm
+                        if self.logsparc_abl_type2:
+                            xform = out0
+                        else:
+                            xform = out0 * gamma_apply + beta_apply
+                        # logsparc_abl_type1: remove L2 norm; otherwise apply L2 norm
+                        if self.logsparc_abl_type1:
+                            out0 = xform
+                        else:
+                            eps = 1e-6
+                            mag = torch.norm(xform, p=2, dim=1, keepdim=True).clamp_min(eps)
+                            out0 = xform / mag
+                        logsparc_gamma_levels.append(g0)
+                        logsparc_beta_levels.append(b0)
+                        outputs_list.append(out0)
                 else:
-                    logsparc_gamma_levels.append(None)
-                    logsparc_beta_levels.append(None)
+                    # Default behavior: do not transform unmasked logits
+                    logsparc_gamma_levels.append(g0 if (need_gb_m0 and self.logsparc_reg > 0.0) else None)
+                    logsparc_beta_levels.append(b0 if (need_gb_m0 and self.logsparc_reg > 0.0) else None)
+                    outputs_list.append(out0)
             else:
                 mfrac = m  # already fraction in [0,1]
                 xb_masked = x.clone()
@@ -867,7 +922,7 @@ class SPARC(nn.Module):
                 cls_m, out_m = self._get_cls_and_logits(xb_masked)
                 if isinstance(out_m, tuple):
                     out_m = out_m[0]
-                # Apply Logsparc only for masked images if enabled and class token available
+                # Apply LogSPARC only for masked images if enabled and class token available
                 if (self.logsparc_enable != 'none') and (cls_m is not None):
                     # Lazy-create Logsparc head
                     if self.logsparc_head is None:
@@ -930,7 +985,7 @@ class SPARC(nn.Module):
                         beta_apply = gb_b.unsqueeze(1)   # [B,1]
                         gamma_b = gamma_apply.squeeze(1)  # [B]
                         beta_b = beta_apply.squeeze(1)   # [B]
-                    # Mode selection
+                    # Mode selection (which parameters to use)
                     if self.logsparc_enable == 'gamma':
                         beta_use = torch.zeros_like(beta_apply)
                         gamma_use = gamma_apply
@@ -940,11 +995,19 @@ class SPARC(nn.Module):
                     else:  # 'gammabeta'
                         beta_use = beta_apply
                         gamma_use = gamma_apply
-                    xform = out_m * gamma_use + beta_use
-                    # Always L2-normalize transformed logits (temperature now only affects beta pre-softplus)
-                    eps = 1e-6
-                    mag = torch.norm(xform, p=2, dim=1, keepdim=True).clamp_min(eps)
-                    out_m = xform / mag
+                    # [NEW] LogSPARC ablations for masked logits
+                    #  - abl_type2: skip gamma/beta transform, only L2 normalize the original logits
+                    #  - abl_type1: remove L2 normalization entirely
+                    if self.logsparc_abl_type2:
+                        xform = out_m
+                    else:
+                        xform = out_m * gamma_use + beta_use
+                    if self.logsparc_abl_type1:
+                        out_m = xform
+                    else:
+                        eps = 1e-6
+                        mag = torch.norm(xform, p=2, dim=1, keepdim=True).clamp_min(eps)
+                        out_m = xform / mag
                     # Save gamma/beta for regularizer
                     logsparc_gamma_levels.append(gamma_b)
                     logsparc_beta_levels.append(beta_b)

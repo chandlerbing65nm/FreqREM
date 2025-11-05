@@ -1,0 +1,295 @@
+/scratch/project_465002264/miniconda3/envs/rem/lib/python3.8/site-packages/timm/models/helpers.py:7: FutureWarning: Importing from timm.models.helpers is deprecated, please import via timm.models
+  warnings.warn(f"Importing from {__name__} is deprecated, please import via timm.models", FutureWarning)
+/scratch/project_465002264/miniconda3/envs/rem/lib/python3.8/site-packages/timm/models/layers/__init__.py:48: FutureWarning: Importing from timm.models.layers is deprecated, please import via timm.layers
+  warnings.warn(f"Importing from {__name__} is deprecated, please import via timm.layers", FutureWarning)
+/scratch/project_465002264/miniconda3/envs/rem/lib/python3.8/site-packages/timm/models/registry.py:4: FutureWarning: Importing from timm.models.registry is deprecated, please import via timm.models
+  warnings.warn(f"Importing from {__name__} is deprecated, please import via timm.models", FutureWarning)
+/pfs/lustrep3/users/doloriel/work/Repo/SPARC/cifar/robustbench/model_zoo/vision_transformer_rem.py:550: UserWarning: Overwriting vit_tiny_patch16_224 in registry with robustbench.model_zoo.vision_transformer_rem.vit_tiny_patch16_224. This is because the name being registered conflicts with an existing name. Please check if this is not expected.
+  def vit_tiny_patch16_224(pretrained=False, **kwargs):
+/pfs/lustrep3/users/doloriel/work/Repo/SPARC/cifar/robustbench/model_zoo/vision_transformer_rem.py:559: UserWarning: Overwriting vit_tiny_patch16_384 in registry with robustbench.model_zoo.vision_transformer_rem.vit_tiny_patch16_384. This is because the name being registered conflicts with an existing name. Please check if this is not expected.
+  def vit_tiny_patch16_384(pretrained=False, **kwargs):
+/pfs/lustrep3/users/doloriel/work/Repo/SPARC/cifar/robustbench/model_zoo/vision_transformer_rem.py:568: UserWarning: Overwriting vit_small_patch32_224 in registry with robustbench.model_zoo.vision_transformer_rem.vit_small_patch32_224. This is because the name being registered conflicts with an existing name. Please check if this is not expected.
+  def vit_small_patch32_224(pretrained=False, **kwargs):
+/pfs/lustrep3/users/doloriel/work/Repo/SPARC/cifar/robustbench/model_zoo/vision_transformer_rem.py:577: UserWarning: Overwriting vit_small_patch32_384 in registry with robustbench.model_zoo.vision_transformer_rem.vit_small_patch32_384. This is because the name being registered conflicts with an existing name. Please check if this is not expected.
+  def vit_small_patch32_384(pretrained=False, **kwargs):
+/pfs/lustrep3/users/doloriel/work/Repo/SPARC/cifar/robustbench/model_zoo/vision_transformer_rem.py:586: UserWarning: Overwriting vit_small_patch16_224 in registry with robustbench.model_zoo.vision_transformer_rem.vit_small_patch16_224. This is because the name being registered conflicts with an existing name. Please check if this is not expected.
+  def vit_small_patch16_224(pretrained=False, **kwargs):
+/pfs/lustrep3/users/doloriel/work/Repo/SPARC/cifar/robustbench/model_zoo/vision_transformer_rem.py:596: UserWarning: Overwriting vit_small_patch16_384 in registry with robustbench.model_zoo.vision_transformer_rem.vit_small_patch16_384. This is because the name being registered conflicts with an existing name. Please check if this is not expected.
+  def vit_small_patch16_384(pretrained=False, **kwargs):
+/pfs/lustrep3/users/doloriel/work/Repo/SPARC/cifar/robustbench/model_zoo/vision_transformer_rem.py:606: UserWarning: Overwriting vit_base_patch32_224 in registry with robustbench.model_zoo.vision_transformer_rem.vit_base_patch32_224. This is because the name being registered conflicts with an existing name. Please check if this is not expected.
+  def vit_base_patch32_224(pretrained=False, **kwargs):
+/pfs/lustrep3/users/doloriel/work/Repo/SPARC/cifar/robustbench/model_zoo/vision_transformer_rem.py:615: UserWarning: Overwriting vit_base_patch32_384 in registry with robustbench.model_zoo.vision_transformer_rem.vit_base_patch32_384. This is because the name being registered conflicts with an existing name. Please check if this is not expected.
+  def vit_base_patch32_384(pretrained=False, **kwargs):
+/pfs/lustrep3/users/doloriel/work/Repo/SPARC/cifar/robustbench/model_zoo/vision_transformer_rem.py:625: UserWarning: Overwriting vit_base_patch16_224 in registry with robustbench.model_zoo.vision_transformer_rem.vit_base_patch16_224. This is because the name being registered conflicts with an existing name. Please check if this is not expected.
+  def vit_base_patch16_224(pretrained=False, **kwargs):
+/pfs/lustrep3/users/doloriel/work/Repo/SPARC/cifar/robustbench/model_zoo/vision_transformer_rem.py:635: UserWarning: Overwriting vit_base_patch16_384 in registry with robustbench.model_zoo.vision_transformer_rem.vit_base_patch16_384. This is because the name being registered conflicts with an existing name. Please check if this is not expected.
+  def vit_base_patch16_384(pretrained=False, **kwargs):
+/pfs/lustrep3/users/doloriel/work/Repo/SPARC/cifar/robustbench/model_zoo/vision_transformer_rem.py:645: UserWarning: Overwriting vit_large_patch32_224 in registry with robustbench.model_zoo.vision_transformer_rem.vit_large_patch32_224. This is because the name being registered conflicts with an existing name. Please check if this is not expected.
+  def vit_large_patch32_224(pretrained=False, **kwargs):
+/pfs/lustrep3/users/doloriel/work/Repo/SPARC/cifar/robustbench/model_zoo/vision_transformer_rem.py:654: UserWarning: Overwriting vit_large_patch32_384 in registry with robustbench.model_zoo.vision_transformer_rem.vit_large_patch32_384. This is because the name being registered conflicts with an existing name. Please check if this is not expected.
+  def vit_large_patch32_384(pretrained=False, **kwargs):
+/pfs/lustrep3/users/doloriel/work/Repo/SPARC/cifar/robustbench/model_zoo/vision_transformer_rem.py:664: UserWarning: Overwriting vit_large_patch16_224 in registry with robustbench.model_zoo.vision_transformer_rem.vit_large_patch16_224. This is because the name being registered conflicts with an existing name. Please check if this is not expected.
+  def vit_large_patch16_224(pretrained=False, **kwargs):
+/pfs/lustrep3/users/doloriel/work/Repo/SPARC/cifar/robustbench/model_zoo/vision_transformer_rem.py:674: UserWarning: Overwriting vit_large_patch16_384 in registry with robustbench.model_zoo.vision_transformer_rem.vit_large_patch16_384. This is because the name being registered conflicts with an existing name. Please check if this is not expected.
+  def vit_large_patch16_384(pretrained=False, **kwargs):
+/pfs/lustrep3/users/doloriel/work/Repo/SPARC/cifar/robustbench/model_zoo/vision_transformer_rem.py:684: UserWarning: Overwriting vit_tiny_patch16_224_in21k in registry with robustbench.model_zoo.vision_transformer_rem.vit_tiny_patch16_224_in21k. This is because the name being registered conflicts with an existing name. Please check if this is not expected.
+  def vit_tiny_patch16_224_in21k(pretrained=False, **kwargs):
+/pfs/lustrep3/users/doloriel/work/Repo/SPARC/cifar/robustbench/model_zoo/vision_transformer_rem.py:695: UserWarning: Overwriting vit_small_patch32_224_in21k in registry with robustbench.model_zoo.vision_transformer_rem.vit_small_patch32_224_in21k. This is because the name being registered conflicts with an existing name. Please check if this is not expected.
+  def vit_small_patch32_224_in21k(pretrained=False, **kwargs):
+/pfs/lustrep3/users/doloriel/work/Repo/SPARC/cifar/robustbench/model_zoo/vision_transformer_rem.py:706: UserWarning: Overwriting vit_small_patch16_224_in21k in registry with robustbench.model_zoo.vision_transformer_rem.vit_small_patch16_224_in21k. This is because the name being registered conflicts with an existing name. Please check if this is not expected.
+  def vit_small_patch16_224_in21k(pretrained=False, **kwargs):
+/pfs/lustrep3/users/doloriel/work/Repo/SPARC/cifar/robustbench/model_zoo/vision_transformer_rem.py:717: UserWarning: Overwriting vit_base_patch32_224_in21k in registry with robustbench.model_zoo.vision_transformer_rem.vit_base_patch32_224_in21k. This is because the name being registered conflicts with an existing name. Please check if this is not expected.
+  def vit_base_patch32_224_in21k(pretrained=False, **kwargs):
+/pfs/lustrep3/users/doloriel/work/Repo/SPARC/cifar/robustbench/model_zoo/vision_transformer_rem.py:729: UserWarning: Overwriting vit_base_patch16_224_in21k in registry with robustbench.model_zoo.vision_transformer_rem.vit_base_patch16_224_in21k. This is because the name being registered conflicts with an existing name. Please check if this is not expected.
+  def vit_base_patch16_224_in21k(pretrained=False, **kwargs):
+/pfs/lustrep3/users/doloriel/work/Repo/SPARC/cifar/robustbench/model_zoo/vision_transformer_rem.py:741: UserWarning: Overwriting vit_large_patch32_224_in21k in registry with robustbench.model_zoo.vision_transformer_rem.vit_large_patch32_224_in21k. This is because the name being registered conflicts with an existing name. Please check if this is not expected.
+  def vit_large_patch32_224_in21k(pretrained=False, **kwargs):
+/pfs/lustrep3/users/doloriel/work/Repo/SPARC/cifar/robustbench/model_zoo/vision_transformer_rem.py:753: UserWarning: Overwriting vit_large_patch16_224_in21k in registry with robustbench.model_zoo.vision_transformer_rem.vit_large_patch16_224_in21k. This is because the name being registered conflicts with an existing name. Please check if this is not expected.
+  def vit_large_patch16_224_in21k(pretrained=False, **kwargs):
+/pfs/lustrep3/users/doloriel/work/Repo/SPARC/cifar/robustbench/model_zoo/vision_transformer_rem.py:765: UserWarning: Overwriting vit_huge_patch14_224_in21k in registry with robustbench.model_zoo.vision_transformer_rem.vit_huge_patch14_224_in21k. This is because the name being registered conflicts with an existing name. Please check if this is not expected.
+  def vit_huge_patch14_224_in21k(pretrained=False, **kwargs):
+/pfs/lustrep3/users/doloriel/work/Repo/SPARC/cifar/robustbench/model_zoo/vision_transformer_rem.py:777: UserWarning: Overwriting deit_tiny_patch16_224 in registry with robustbench.model_zoo.vision_transformer_rem.deit_tiny_patch16_224. This is because the name being registered conflicts with an existing name. Please check if this is not expected.
+  def deit_tiny_patch16_224(pretrained=False, **kwargs):
+/pfs/lustrep3/users/doloriel/work/Repo/SPARC/cifar/robustbench/model_zoo/vision_transformer_rem.py:787: UserWarning: Overwriting deit_small_patch16_224 in registry with robustbench.model_zoo.vision_transformer_rem.deit_small_patch16_224. This is because the name being registered conflicts with an existing name. Please check if this is not expected.
+  def deit_small_patch16_224(pretrained=False, **kwargs):
+/pfs/lustrep3/users/doloriel/work/Repo/SPARC/cifar/robustbench/model_zoo/vision_transformer_rem.py:797: UserWarning: Overwriting deit_base_patch16_224 in registry with robustbench.model_zoo.vision_transformer_rem.deit_base_patch16_224. This is because the name being registered conflicts with an existing name. Please check if this is not expected.
+  def deit_base_patch16_224(pretrained=False, **kwargs):
+/pfs/lustrep3/users/doloriel/work/Repo/SPARC/cifar/robustbench/model_zoo/vision_transformer_rem.py:807: UserWarning: Overwriting deit_base_patch16_384 in registry with robustbench.model_zoo.vision_transformer_rem.deit_base_patch16_384. This is because the name being registered conflicts with an existing name. Please check if this is not expected.
+  def deit_base_patch16_384(pretrained=False, **kwargs):
+/pfs/lustrep3/users/doloriel/work/Repo/SPARC/cifar/robustbench/model_zoo/vision_transformer_rem.py:817: UserWarning: Overwriting deit_tiny_distilled_patch16_224 in registry with robustbench.model_zoo.vision_transformer_rem.deit_tiny_distilled_patch16_224. This is because the name being registered conflicts with an existing name. Please check if this is not expected.
+  def deit_tiny_distilled_patch16_224(pretrained=False, **kwargs):
+/pfs/lustrep3/users/doloriel/work/Repo/SPARC/cifar/robustbench/model_zoo/vision_transformer_rem.py:828: UserWarning: Overwriting deit_small_distilled_patch16_224 in registry with robustbench.model_zoo.vision_transformer_rem.deit_small_distilled_patch16_224. This is because the name being registered conflicts with an existing name. Please check if this is not expected.
+  def deit_small_distilled_patch16_224(pretrained=False, **kwargs):
+/pfs/lustrep3/users/doloriel/work/Repo/SPARC/cifar/robustbench/model_zoo/vision_transformer_rem.py:839: UserWarning: Overwriting deit_base_distilled_patch16_224 in registry with robustbench.model_zoo.vision_transformer_rem.deit_base_distilled_patch16_224. This is because the name being registered conflicts with an existing name. Please check if this is not expected.
+  def deit_base_distilled_patch16_224(pretrained=False, **kwargs):
+/pfs/lustrep3/users/doloriel/work/Repo/SPARC/cifar/robustbench/model_zoo/vision_transformer_rem.py:850: UserWarning: Overwriting deit_base_distilled_patch16_384 in registry with robustbench.model_zoo.vision_transformer_rem.deit_base_distilled_patch16_384. This is because the name being registered conflicts with an existing name. Please check if this is not expected.
+  def deit_base_distilled_patch16_384(pretrained=False, **kwargs):
+/pfs/lustrep3/users/doloriel/work/Repo/SPARC/cifar/robustbench/model_zoo/vision_transformer_rem.py:861: UserWarning: Overwriting vit_base_patch16_224_miil_in21k in registry with robustbench.model_zoo.vision_transformer_rem.vit_base_patch16_224_miil_in21k. This is because the name being registered conflicts with an existing name. Please check if this is not expected.
+  def vit_base_patch16_224_miil_in21k(pretrained=False, **kwargs):
+/pfs/lustrep3/users/doloriel/work/Repo/SPARC/cifar/robustbench/model_zoo/vision_transformer_rem.py:871: UserWarning: Overwriting vit_base_patch16_224_miil in registry with robustbench.model_zoo.vision_transformer_rem.vit_base_patch16_224_miil. This is because the name being registered conflicts with an existing name. Please check if this is not expected.
+  def vit_base_patch16_224_miil(pretrained=False, **kwargs):
+/scratch/project_465002264/miniconda3/envs/rem/lib/python3.8/site-packages/timm/models/hub.py:4: FutureWarning: Importing from timm.models.hub is deprecated, please import via timm.models
+  warnings.warn(f"Importing from {__name__} is deprecated, please import via timm.models", FutureWarning)
+[25/10/27 20:32:58] [conf.py:  459]: PyTorch Version: torch=2.2.0+rocm5.6, cuda=None, cudnn=2020000
+[25/10/27 20:32:58] [conf.py:  461]: Using RNG seed: 1
+[25/10/27 20:32:58] [conf.py:  462]: BN:
+  EPS: 1e-05
+  MOM: 0.1
+CKPT_DIR: ./ckpt
+CORRUPTION:
+  DATASET: cifar100
+  NUM_EX: 10000
+  SEVERITY: [5]
+  TYPE: ['gaussian_noise', 'shot_noise', 'impulse_noise', 'defocus_blur', 'glass_blur', 'motion_blur', 'zoom_blur', 'snow', 'frost', 'fog', 'brightness', 'contrast', 'elastic_transform', 'pixelate', 'jpeg_compression']
+CUDNN:
+  BENCHMARK: True
+DATA_DIR: /scratch/project_465002264/datasets/cifar100c
+DESC: 
+LOG_DEST: sparc_251027_203242.txt
+LOG_TIME: 251027_203242
+MODEL:
+  ADAPTATION: REM
+  ARCH: Standard_VITB_REM
+  EPISODIC: False
+  LN_QUARTER: default
+OPTIM:
+  AP: 0.92
+  BETA: 0.9
+  DAMPENING: 0.0
+  KEEP: 288
+  LAMB: 1.0
+  LR: 0.0001
+  M: 0.1
+  MARGIN: 0.0
+  METHOD: Adam
+  MOMENTUM: 0.9
+  MT: 0.999
+  MT_ViDA: 0.999
+  N: 3
+  NESTEROV: True
+  RST: 0.01
+  STEPS: 1
+  ViDALR: 0.0001
+  WD: 0.0
+PHASE:
+  ALPHA: 0.45
+  CHANNEL_ORDER: [0, 1, 2]
+  CHANNEL_STEPS: [0, 1, 2, 3]
+  CONSISTENCY_MODE: mcl
+  CWAL_THRESHOLD: 0.7
+  LEVELS: [0.0, 0.25, 0.3]
+  SEED: None
+  USE_ERL: True
+  USE_MCL: True
+RNG_SEED: 1
+SAVE_DIR: ./output
+SPARC:
+  DISABLE_ERL: False
+  DISABLE_MCL: False
+  ERL_ACTIVATION: relu
+  ERL_LEAKY_RELU_SLOPE: 0.01
+  ERL_SOFTPLUS_BETA: 1.0
+  LOGSPARC_ENABLE: none
+  LOGSPARC_LR_MULT: 1.0
+  LOGSPARC_REG: 0.0
+  LOGSPARC_TEMP: 0.0
+  LOGSPARC_TYPE2: False
+  LOGSPARC_TYPE3: False
+  MASK_TYPE: binary
+  MCL_DISTANCE: ce
+  MCL_TEMPERATURE: 1.0
+  MCL_TEMPERATURE_APPLY: both
+  NUM_SQUARES: 1
+  PATCH_SIZE: 8
+  PLOT_EMA_ALPHA: 0.98
+  PLOT_LOSS: False
+  PLOT_LOSS_PATH: /users/doloriel/work/Repo/SPARC/cifar/plots/SPARC/Loss/losses.png
+  RANDOM_MASKING: True
+TEST:
+  BATCH_SIZE: 20
+  ckpt: None
+  vida_rank1: 1
+  vida_rank2: 128
+block_size: 16
+hog_ratio: None
+mask_ratio: 0.5
+size: 384
+use_hog: False
+[25/10/27 20:32:58] [cifar100c_vit_sparc.py:   42]: [cifar100] RNG seed in use: 1
+[25/10/27 20:33:18] [cifar100c_vit_sparc.py:   67]: test-time adaptation: SPARC
+[25/10/27 20:33:18] [cifar100c_vit_sparc.py:  340]: optimizer for adaptation: Adam (
+Parameter Group 0
+    amsgrad: False
+    betas: (0.9, 0.999)
+    capturable: False
+    differentiable: False
+    eps: 1e-08
+    foreach: None
+    fused: None
+    lr: 0.0001
+    maximize: False
+    weight_decay: 0.0
+)
+[25/10/27 20:33:18] [cifar100c_vit_sparc.py:   97]: resetting model
+[25/10/27 20:34:03] [sparc.py: 1081]: [SPARC.debug] m=0.100
+[25/10/27 20:34:03] [sparc.py: 1081]: [SPARC.debug] m=0.200
+[25/10/27 20:34:19] [sparc.py: 1108]: [SPARC.debug] grad
+[25/10/27 20:34:21] [sparc.py: 1081]: [SPARC.debug] m=0.100
+[25/10/27 20:42:50] [cifar100c_vit_sparc.py:  118]: Error % [gaussian_noise5]: 35.34%
+[25/10/27 20:42:50] [cifar100c_vit_sparc.py:  119]: NLL [gaussian_noise5]: 1.5439
+[25/10/27 20:42:50] [cifar100c_vit_sparc.py:  120]: ECE [gaussian_noise5]: 0.1207
+[25/10/27 20:42:50] [cifar100c_vit_sparc.py:  122]: Adaptation Time (lower is better) [gaussian_noise5]: 234.491s
+[25/10/27 20:42:50] [cifar100c_vit_sparc.py:  123]: Adaptation MACs (lower is better) [gaussian_noise5]: 5.548 x 10^14
+[25/10/27 20:42:50] [cifar100c_vit_sparc.py:  134]: Domain Shift Robustness (std, lower is better) up to [gaussian_noise5]: 0.0000
+[25/10/27 20:42:50] [cifar100c_vit_sparc.py:  101]: not resetting model
+[25/10/27 20:51:31] [cifar100c_vit_sparc.py:  118]: Error % [shot_noise5]: 27.52%
+[25/10/27 20:51:31] [cifar100c_vit_sparc.py:  119]: NLL [shot_noise5]: 1.1331
+[25/10/27 20:51:31] [cifar100c_vit_sparc.py:  120]: ECE [shot_noise5]: 0.1036
+[25/10/27 20:51:31] [cifar100c_vit_sparc.py:  122]: Adaptation Time (lower is better) [shot_noise5]: 184.375s
+[25/10/27 20:51:31] [cifar100c_vit_sparc.py:  123]: Adaptation MACs (lower is better) [shot_noise5]: 5.548 x 10^14
+[25/10/27 20:51:31] [cifar100c_vit_sparc.py:  134]: Domain Shift Robustness (std, lower is better) up to [shot_noise5]: 0.0391
+[25/10/27 20:52:27] [cifar100c_vit_sparc.py:  149]: Catastrophic Forgetting Rate (prev-domain, lower is better) after [shot_noise5]: 0.0000
+[25/10/27 20:52:28] [cifar100c_vit_sparc.py:  101]: not resetting model
+[25/10/27 21:01:08] [cifar100c_vit_sparc.py:  118]: Error % [impulse_noise5]: 18.19%
+[25/10/27 21:01:09] [cifar100c_vit_sparc.py:  119]: NLL [impulse_noise5]: 0.7025
+[25/10/27 21:01:09] [cifar100c_vit_sparc.py:  120]: ECE [impulse_noise5]: 0.0649
+[25/10/27 21:01:09] [cifar100c_vit_sparc.py:  122]: Adaptation Time (lower is better) [impulse_noise5]: 184.550s
+[25/10/27 21:01:09] [cifar100c_vit_sparc.py:  123]: Adaptation MACs (lower is better) [impulse_noise5]: 5.548 x 10^14
+[25/10/27 21:01:09] [cifar100c_vit_sparc.py:  134]: Domain Shift Robustness (std, lower is better) up to [impulse_noise5]: 0.0701
+[25/10/27 21:02:04] [cifar100c_vit_sparc.py:  149]: Catastrophic Forgetting Rate (prev-domain, lower is better) after [impulse_noise5]: 0.0000
+[25/10/27 21:02:05] [cifar100c_vit_sparc.py:  101]: not resetting model
+[25/10/27 21:10:46] [cifar100c_vit_sparc.py:  118]: Error % [defocus_blur5]: 18.70%
+[25/10/27 21:10:46] [cifar100c_vit_sparc.py:  119]: NLL [defocus_blur5]: 0.7190
+[25/10/27 21:10:46] [cifar100c_vit_sparc.py:  120]: ECE [defocus_blur5]: 0.0656
+[25/10/27 21:10:46] [cifar100c_vit_sparc.py:  122]: Adaptation Time (lower is better) [defocus_blur5]: 184.309s
+[25/10/27 21:10:46] [cifar100c_vit_sparc.py:  123]: Adaptation MACs (lower is better) [defocus_blur5]: 5.548 x 10^14
+[25/10/27 21:10:46] [cifar100c_vit_sparc.py:  134]: Domain Shift Robustness (std, lower is better) up to [defocus_blur5]: 0.0706
+[25/10/27 21:11:42] [cifar100c_vit_sparc.py:  149]: Catastrophic Forgetting Rate (prev-domain, lower is better) after [defocus_blur5]: 0.0000
+[25/10/27 21:11:43] [cifar100c_vit_sparc.py:  101]: not resetting model
+[25/10/27 21:20:24] [cifar100c_vit_sparc.py:  118]: Error % [glass_blur5]: 36.12%
+[25/10/27 21:20:24] [cifar100c_vit_sparc.py:  119]: NLL [glass_blur5]: 1.6176
+[25/10/27 21:20:24] [cifar100c_vit_sparc.py:  120]: ECE [glass_blur5]: 0.1413
+[25/10/27 21:20:24] [cifar100c_vit_sparc.py:  122]: Adaptation Time (lower is better) [glass_blur5]: 184.322s
+[25/10/27 21:20:24] [cifar100c_vit_sparc.py:  123]: Adaptation MACs (lower is better) [glass_blur5]: 5.548 x 10^14
+[25/10/27 21:20:24] [cifar100c_vit_sparc.py:  134]: Domain Shift Robustness (std, lower is better) up to [glass_blur5]: 0.0774
+[25/10/27 21:21:20] [cifar100c_vit_sparc.py:  149]: Catastrophic Forgetting Rate (prev-domain, lower is better) after [glass_blur5]: 0.0088
+[25/10/27 21:21:21] [cifar100c_vit_sparc.py:  101]: not resetting model
+[25/10/27 21:30:01] [cifar100c_vit_sparc.py:  118]: Error % [motion_blur5]: 20.39%
+[25/10/27 21:30:01] [cifar100c_vit_sparc.py:  119]: NLL [motion_blur5]: 0.8067
+[25/10/27 21:30:01] [cifar100c_vit_sparc.py:  120]: ECE [motion_blur5]: 0.0759
+[25/10/27 21:30:01] [cifar100c_vit_sparc.py:  122]: Adaptation Time (lower is better) [motion_blur5]: 183.953s
+[25/10/27 21:30:01] [cifar100c_vit_sparc.py:  123]: Adaptation MACs (lower is better) [motion_blur5]: 5.548 x 10^14
+[25/10/27 21:30:01] [cifar100c_vit_sparc.py:  134]: Domain Shift Robustness (std, lower is better) up to [motion_blur5]: 0.0750
+[25/10/27 21:30:57] [cifar100c_vit_sparc.py:  149]: Catastrophic Forgetting Rate (prev-domain, lower is better) after [motion_blur5]: 0.0000
+[25/10/27 21:30:58] [cifar100c_vit_sparc.py:  101]: not resetting model
+[25/10/27 21:39:44] [cifar100c_vit_sparc.py:  118]: Error % [zoom_blur5]: 15.50%
+[25/10/27 21:39:44] [cifar100c_vit_sparc.py:  119]: NLL [zoom_blur5]: 0.6012
+[25/10/27 21:39:44] [cifar100c_vit_sparc.py:  120]: ECE [zoom_blur5]: 0.0580
+[25/10/27 21:39:44] [cifar100c_vit_sparc.py:  122]: Adaptation Time (lower is better) [zoom_blur5]: 188.179s
+[25/10/27 21:39:44] [cifar100c_vit_sparc.py:  123]: Adaptation MACs (lower is better) [zoom_blur5]: 5.548 x 10^14
+[25/10/27 21:39:44] [cifar100c_vit_sparc.py:  134]: Domain Shift Robustness (std, lower is better) up to [zoom_blur5]: 0.0786
+[25/10/27 21:40:40] [cifar100c_vit_sparc.py:  149]: Catastrophic Forgetting Rate (prev-domain, lower is better) after [zoom_blur5]: 0.0000
+[25/10/27 21:40:41] [cifar100c_vit_sparc.py:  101]: not resetting model
+[25/10/27 21:49:22] [cifar100c_vit_sparc.py:  118]: Error % [snow5]: 18.54%
+[25/10/27 21:49:22] [cifar100c_vit_sparc.py:  119]: NLL [snow5]: 0.7310
+[25/10/27 21:49:22] [cifar100c_vit_sparc.py:  120]: ECE [snow5]: 0.0681
+[25/10/27 21:49:22] [cifar100c_vit_sparc.py:  122]: Adaptation Time (lower is better) [snow5]: 184.118s
+[25/10/27 21:49:22] [cifar100c_vit_sparc.py:  123]: Adaptation MACs (lower is better) [snow5]: 5.548 x 10^14
+[25/10/27 21:49:22] [cifar100c_vit_sparc.py:  134]: Domain Shift Robustness (std, lower is better) up to [snow5]: 0.0762
+[25/10/27 21:50:18] [cifar100c_vit_sparc.py:  149]: Catastrophic Forgetting Rate (prev-domain, lower is better) after [snow5]: 0.0000
+[25/10/27 21:50:19] [cifar100c_vit_sparc.py:  101]: not resetting model
+[25/10/27 21:58:59] [cifar100c_vit_sparc.py:  118]: Error % [frost5]: 15.88%
+[25/10/27 21:58:59] [cifar100c_vit_sparc.py:  119]: NLL [frost5]: 0.6048
+[25/10/27 21:58:59] [cifar100c_vit_sparc.py:  120]: ECE [frost5]: 0.0594
+[25/10/27 21:58:59] [cifar100c_vit_sparc.py:  122]: Adaptation Time (lower is better) [frost5]: 184.067s
+[25/10/27 21:58:59] [cifar100c_vit_sparc.py:  123]: Adaptation MACs (lower is better) [frost5]: 5.548 x 10^14
+[25/10/27 21:58:59] [cifar100c_vit_sparc.py:  134]: Domain Shift Robustness (std, lower is better) up to [frost5]: 0.0760
+[25/10/27 21:59:55] [cifar100c_vit_sparc.py:  149]: Catastrophic Forgetting Rate (prev-domain, lower is better) after [frost5]: 0.0000
+[25/10/27 21:59:56] [cifar100c_vit_sparc.py:  101]: not resetting model
+[25/10/27 22:08:36] [cifar100c_vit_sparc.py:  118]: Error % [fog5]: 19.62%
+[25/10/27 22:08:36] [cifar100c_vit_sparc.py:  119]: NLL [fog5]: 0.7740
+[25/10/27 22:08:36] [cifar100c_vit_sparc.py:  120]: ECE [fog5]: 0.0726
+[25/10/27 22:08:36] [cifar100c_vit_sparc.py:  122]: Adaptation Time (lower is better) [fog5]: 183.877s
+[25/10/27 22:08:36] [cifar100c_vit_sparc.py:  123]: Adaptation MACs (lower is better) [fog5]: 5.548 x 10^14
+[25/10/27 22:08:36] [cifar100c_vit_sparc.py:  134]: Domain Shift Robustness (std, lower is better) up to [fog5]: 0.0728
+[25/10/27 22:09:32] [cifar100c_vit_sparc.py:  149]: Catastrophic Forgetting Rate (prev-domain, lower is better) after [fog5]: 0.0000
+[25/10/27 22:09:33] [cifar100c_vit_sparc.py:  101]: not resetting model
+[25/10/27 22:18:13] [cifar100c_vit_sparc.py:  118]: Error % [brightness5]: 11.54%
+[25/10/27 22:18:13] [cifar100c_vit_sparc.py:  119]: NLL [brightness5]: 0.4395
+[25/10/27 22:18:13] [cifar100c_vit_sparc.py:  120]: ECE [brightness5]: 0.0435
+[25/10/27 22:18:13] [cifar100c_vit_sparc.py:  122]: Adaptation Time (lower is better) [brightness5]: 183.965s
+[25/10/27 22:18:13] [cifar100c_vit_sparc.py:  123]: Adaptation MACs (lower is better) [brightness5]: 5.548 x 10^14
+[25/10/27 22:18:13] [cifar100c_vit_sparc.py:  134]: Domain Shift Robustness (std, lower is better) up to [brightness5]: 0.0763
+[25/10/27 22:19:09] [cifar100c_vit_sparc.py:  149]: Catastrophic Forgetting Rate (prev-domain, lower is better) after [brightness5]: 0.0000
+[25/10/27 22:19:10] [cifar100c_vit_sparc.py:  101]: not resetting model
+[25/10/27 22:27:49] [cifar100c_vit_sparc.py:  118]: Error % [contrast5]: 14.27%
+[25/10/27 22:27:49] [cifar100c_vit_sparc.py:  119]: NLL [contrast5]: 0.5407
+[25/10/27 22:27:49] [cifar100c_vit_sparc.py:  120]: ECE [contrast5]: 0.0496
+[25/10/27 22:27:49] [cifar100c_vit_sparc.py:  122]: Adaptation Time (lower is better) [contrast5]: 183.933s
+[25/10/27 22:27:49] [cifar100c_vit_sparc.py:  123]: Adaptation MACs (lower is better) [contrast5]: 5.548 x 10^14
+[25/10/27 22:27:49] [cifar100c_vit_sparc.py:  134]: Domain Shift Robustness (std, lower is better) up to [contrast5]: 0.0758
+[25/10/27 22:28:45] [cifar100c_vit_sparc.py:  149]: Catastrophic Forgetting Rate (prev-domain, lower is better) after [contrast5]: 0.0016
+[25/10/27 22:28:46] [cifar100c_vit_sparc.py:  101]: not resetting model
+[25/10/27 22:37:27] [cifar100c_vit_sparc.py:  118]: Error % [elastic_transform5]: 30.63%
+[25/10/27 22:37:27] [cifar100c_vit_sparc.py:  119]: NLL [elastic_transform5]: 1.3298
+[25/10/27 22:37:27] [cifar100c_vit_sparc.py:  120]: ECE [elastic_transform5]: 0.1290
+[25/10/27 22:37:27] [cifar100c_vit_sparc.py:  122]: Adaptation Time (lower is better) [elastic_transform5]: 184.126s
+[25/10/27 22:37:27] [cifar100c_vit_sparc.py:  123]: Adaptation MACs (lower is better) [elastic_transform5]: 5.548 x 10^14
+[25/10/27 22:37:27] [cifar100c_vit_sparc.py:  134]: Domain Shift Robustness (std, lower is better) up to [elastic_transform5]: 0.0772
+[25/10/27 22:38:23] [cifar100c_vit_sparc.py:  149]: Catastrophic Forgetting Rate (prev-domain, lower is better) after [elastic_transform5]: 0.0380
+[25/10/27 22:38:24] [cifar100c_vit_sparc.py:  101]: not resetting model
+[25/10/27 22:47:06] [cifar100c_vit_sparc.py:  118]: Error % [pixelate5]: 23.42%
+[25/10/27 22:47:06] [cifar100c_vit_sparc.py:  119]: NLL [pixelate5]: 0.9794
+[25/10/27 22:47:06] [cifar100c_vit_sparc.py:  120]: ECE [pixelate5]: 0.0844
+[25/10/27 22:47:06] [cifar100c_vit_sparc.py:  122]: Adaptation Time (lower is better) [pixelate5]: 185.735s
+[25/10/27 22:47:06] [cifar100c_vit_sparc.py:  123]: Adaptation MACs (lower is better) [pixelate5]: 5.548 x 10^14
+[25/10/27 22:47:06] [cifar100c_vit_sparc.py:  134]: Domain Shift Robustness (std, lower is better) up to [pixelate5]: 0.0746
+[25/10/27 22:48:02] [cifar100c_vit_sparc.py:  149]: Catastrophic Forgetting Rate (prev-domain, lower is better) after [pixelate5]: 0.0000
+[25/10/27 22:48:03] [cifar100c_vit_sparc.py:  101]: not resetting model
+[25/10/27 22:56:46] [cifar100c_vit_sparc.py:  118]: Error % [jpeg_compression5]: 27.15%
+[25/10/27 22:56:46] [cifar100c_vit_sparc.py:  119]: NLL [jpeg_compression5]: 1.1196
+[25/10/27 22:56:46] [cifar100c_vit_sparc.py:  120]: ECE [jpeg_compression5]: 0.1073
+[25/10/27 22:56:46] [cifar100c_vit_sparc.py:  122]: Adaptation Time (lower is better) [jpeg_compression5]: 185.980s
+[25/10/27 22:56:46] [cifar100c_vit_sparc.py:  123]: Adaptation MACs (lower is better) [jpeg_compression5]: 5.548 x 10^14
+[25/10/27 22:56:46] [cifar100c_vit_sparc.py:  134]: Domain Shift Robustness (std, lower is better) up to [jpeg_compression5]: 0.0732
+[25/10/27 22:57:42] [cifar100c_vit_sparc.py:  149]: Catastrophic Forgetting Rate (prev-domain, lower is better) after [jpeg_compression5]: 0.0000

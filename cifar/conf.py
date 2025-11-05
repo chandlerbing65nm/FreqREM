@@ -196,6 +196,9 @@ _C.SPARC.LOGSPARC_REG = 0.0                 # regularizer strength for monotonic
 _C.SPARC.LOGSPARC_TEMP = 0.0                # if >0, apply as temperature to beta pre-softplus; masked views only
 _C.SPARC.LOGSPARC_TYPE2 = False             # if true and LOGSPARC_ENABLE!=none: gamma/beta are [B,C]
 _C.SPARC.LOGSPARC_TYPE3 = False             # if true and LOGSPARC_ENABLE!=none: gamma/beta are [1,C]
+_C.SPARC.LOGSPARC_ABL_TYPE1 = False         # Ablation: remove L2 norm after gamma/beta transform
+_C.SPARC.LOGSPARC_ABL_TYPE2 = False         # Ablation: only apply L2 norm, skip gamma/beta transform
+_C.SPARC.LOGSPARC_ABL_TYPE3 = False         # Ablation: also apply to unmasked (m=0) logits
 
 # # Config destination (in SAVE_DIR)
 # _C.CFG_DEST = "cfg.yaml"
@@ -331,6 +334,13 @@ def load_cfg_fom_args(description="Config options."):
                         help="If set with --logsparc_enable, use per-class gamma/beta of shape [B,C]")
     parser.add_argument("--logsparc_type3", action="store_true",
                         help="If set with --logsparc_enable, use global per-class gamma/beta of shape [1,C]")
+    # Logsparc ablation CLI options (work in combination with --logsparc_enable)
+    parser.add_argument("--logspark_abl_type1", action="store_true",
+                        help="Ablation: remove L2 normalization after gamma/beta transformation")
+    parser.add_argument("--logspark_abl_type2", action="store_true",
+                        help="Ablation: only apply L2 normalization to logits; do NOT apply gamma/beta transform")
+    parser.add_argument("--logspark_abl_type3", action="store_true",
+                        help="Ablation: apply the chosen transform/normalization policy to unmasked (m=0) logits as well")
     # (TALN CLI options removed)
     # (Removed Phase-mix-then-mask CLI arg)
 
@@ -420,6 +430,13 @@ def load_cfg_fom_args(description="Config options."):
         cfg.SPARC.LOGSPARC_TYPE2 = True
     if args.logsparc_type3:
         cfg.SPARC.LOGSPARC_TYPE3 = True
+    # Logsparc ablations
+    if args.logspark_abl_type1:
+        cfg.SPARC.LOGSPARC_ABL_TYPE1 = True
+    if args.logspark_abl_type2:
+        cfg.SPARC.LOGSPARC_ABL_TYPE2 = True
+    if args.logspark_abl_type3:
+        cfg.SPARC.LOGSPARC_ABL_TYPE3 = True
     # (Feature polynomial toggles removed)
     # (Removed LN sub-option gating as stats/affine/EMA are removed)
     # (Removed SPARC pruning CLI mappings)

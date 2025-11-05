@@ -48,17 +48,25 @@ SPARC:
   PLOT_LOSS: false
   PLOT_LOSS_PATH: /users/doloriel/work/Repo/SPARC/cifar/plots/SPARC/Loss/losses.png
   PLOT_EMA_ALPHA: 0.98
-  # MCL and ERL activation
+  # MCL temperature scaling
   MCL_TEMPERATURE: 1.0
   MCL_TEMPERATURE_APPLY: both
   MCL_DISTANCE: ce
+  # ERL
   ERL_ACTIVATION: relu
   ERL_LEAKY_RELU_SLOPE: 0.01
   ERL_SOFTPLUS_BETA: 1.0
-  # Logsparc (logit FiLM)
-  LOGSPARC_ENABLE: none    # choices: none|gamma|beta|gammabeta
+  # Disable toggles
+  DISABLE_MCL: false
+  DISABLE_ERL: false
+  # LogSPARC options
+  LOGSPARC_ENABLE: none       # none|gamma|beta|gammabeta
   LOGSPARC_LR_MULT: 1.0
   LOGSPARC_REG: 0.0
-  LOGSPARC_TEMP: 0.0       # if >0, apply as temperature to beta pre-softplus; masked views only
-  LOGSPARC_TYPE2: false    # if true (with LOGSPARC_ENABLE), gamma/beta are [B,C]
-  LOGSPARC_TYPE3: false    # if true (with LOGSPARC_ENABLE), gamma/beta are [1,C]
+  LOGSPARC_TEMP: 0.0
+  LOGSPARC_TYPE2: false
+  LOGSPARC_TYPE3: false
+  # LogSPARC ablations (see sparc.py for details)
+  LOGSPARC_ABL_TYPE1: false   # remove L2 normalization after gamma/beta transform
+  LOGSPARC_ABL_TYPE2: false   # only L2 normalization; skip gamma/beta transform
+  LOGSPARC_ABL_TYPE3: false   # also apply selected policy to unmasked (m=0) logits
